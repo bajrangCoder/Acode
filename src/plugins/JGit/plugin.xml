@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='utf-8'?>
+<plugin id="cordova-plugin-jgit" version="0.0.1" xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android">
+    <name>JGit</name>
+    <description>Cordova Plugin for JGit</description>
+    <license>MIT</license>
+
+    <!-- JavaScript Module for the Plugin -->
+    <js-module src="www/JGit.js" name="JGit">
+        <clobbers target="JGit"/>
+    </js-module>
+
+    <!-- Android Platform Configuration -->
+    <platform name="android">
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="JGit">
+                <param name="android-package" value="com.foxdebug.jgit.JGit" />
+            </feature>
+        </config-file>
+        <!-- Include the JGit Library via Gradle Dependency -->
+        <framework src="org.eclipse.jgit:org.eclipse.jgit:7.0.0.202409031743-r" type="gradle" />
+
+        <!-- Java Source File -->
+        <source-file src="src/android/JGit.java" target-dir="src/com/foxdebug/jgit"/>
+    </platform>
+</plugin>

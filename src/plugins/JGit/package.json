@@ -1,0 +1,17 @@
+{
+  "name": "cordova-plugin-jgit",
+  "version": "0.0.1",
+  "description": "Cordova Plugin for JGit",
+  "cordova": {
+    "id": "cordova-plugin-jgit",
+    "platforms": [
+      "android"
+    ]
+  },
+  "keywords": [
+    "ecosystem:cordova",
+    "cordova-android"
+  ],
+  "author": "Raunak Raj",
+  "license": "MIT"
+}

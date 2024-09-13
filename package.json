@@ -32,7 +32,8 @@
       "cordova-plugin-sdcard": {},
       "cordova-plugin-browser": {},
       "cordova-plugin-iap": {},
-      "cordova-plugin-system": {}
+      "cordova-plugin-system": {},
+      "cordova-plugin-jgit": {}
     },
     "platforms": [
       "android"
@@ -66,6 +67,7 @@
     "cordova-plugin-file": "^8.0.1",
     "cordova-plugin-ftp": "file:src/plugins/ftp",
     "cordova-plugin-iap": "file:src/plugins/iap",
+    "cordova-plugin-jgit": "file:src/plugins/JGit",
     "cordova-plugin-sdcard": "file:src/plugins/sdcard",
     "cordova-plugin-server": "file:src/plugins/server",
     "cordova-plugin-sftp": "file:src/plugins/sftp",
