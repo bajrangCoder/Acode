@@ -1,7 +1,7 @@
 import initColorView from "ace/colorView";
 import { deactivateColorView } from "ace/colorView";
 import { setCommands, setKeyBindings } from "ace/commands";
-import AceRainbowBrackets from "ace/rainbowBracktes";
+import AceRainbowBrackets from "ace/rainbowBrackets";
 import touchListeners from "ace/touchHandler";
 import { scrollAnimationFrame } from "ace/touchHandler";
 import list from "components/collapsableList";
