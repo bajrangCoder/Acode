@@ -1,6 +1,7 @@
 import { isAIMessageChunk } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
+import { CordovaSqliteCheckpointSaver } from "./checkpoint"; // IMPORT THE CUSTOM SAVER
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import confirm from "dialogs/confirm";
 import select from "dialogs/select";

@@ -1,4 +1,3 @@
-// src/pages/aiAssistant/db.js (or a more general lib folder)
 
 const DB_NAME = "AIAssistant.db"; // SQLite convention for .db extension
 const DB_LOCATION = "default"; // Standard location
@@ -61,13 +60,27 @@ function initializeTables() {
                     FOREIGN KEY (conversationId) REFERENCES conversations(id) ON DELETE CASCADE
                 )
             `);
-				// Index for faster querying of messages by conversationId and sorting
+        // LangGraph Checkpoints Table
+        tx.executeSql(`
+                CREATE TABLE IF NOT EXISTS langgraph_checkpoints (
+                    thread_id TEXT NOT NULL,
+                    checkpoint_id TEXT NOT NULL,
+                    parent_checkpoint_id TEXT,
+                    checkpoint TEXT,
+                    updated_at INTEGER,
+                    PRIMARY KEY (thread_id, checkpoint_id)
+                )
+            `);
+				// Indexes
 				tx.executeSql(
 					`CREATE INDEX IF NOT EXISTS idx_messages_conversationId_timestamp ON messages (conversationId, timestamp)`,
 				);
 				tx.executeSql(
 					`CREATE INDEX IF NOT EXISTS idx_conversations_lastModifiedAt ON conversations (lastModifiedAt)`,
 				);
+				tx.executeSql(
+              `CREATE INDEX IF NOT EXISTS idx_lg_checkpoints_thread_id_updated_at ON langgraph_checkpoints (thread_id, updated_at DESC)`);
+				
 			},
 			(error) => {
 				console.error(
@@ -264,4 +277,108 @@ export async function deleteConversation(conversationId) {
 	});
 }
 
-// Ensure DB is opened and tables initialized when module loads or on first call
+// --- LangGraph Checkpoint DB Functions ---
+export async function getLangGraphCheckpointFromDB(threadId, checkpointId = null) {
+    await openDB();
+    return new Promise((resolve, reject) => {
+        db.readTransaction(async (tx) => {
+            try {
+                let sql = "SELECT checkpoint FROM langgraph_checkpoints WHERE thread_id = ?";
+                const params = [threadId];
+                if (checkpointId) {
+                    sql += " AND checkpoint_id = ?";
+                    params.push(checkpointId);
+                } else {
+                    sql += " ORDER BY updated_at DESC LIMIT 1"; // Get latest for the thread
+                }
+                const resultSet = await executeSqlAsync(tx, sql, params);
+                if (resultSet.rows.length > 0) {
+                    const checkpointStr = resultSet.rows.item(0).checkpoint;
+                    resolve(checkpointStr ? JSON.parse(checkpointStr) : null);
+                } else {
+                    resolve(null);
+                }
+            } catch (error) {
+                console.error(`[DB] Error getting LangGraph checkpoint (thread: ${threadId}, ckpt: ${checkpointId}):`, error);
+                reject(error);
+            }
+        });
+    });
+}
+
+export async function putLangGraphCheckpointInDB(threadId, checkpointTuple) {
+    await openDB();
+    const checkpointId = checkpointTuple?.config?.configurable?.checkpoint_id;
+    const parentCheckpointId = checkpointTuple?.parent_config?.configurable?.checkpoint_id || null;
+
+    if (!checkpointId) {
+        console.error("[DB] Cannot save LangGraph checkpoint: checkpoint_id missing from checkpointTuple.config");
+        return Promise.reject(new Error("Missing checkpoint_id in checkpoint config"));
+    }
+    const checkpointStr = JSON.stringify(checkpointTuple);
+    const updatedAt = Date.parse(checkpointTuple.config?.configurable?.checkpoint_id?.split("T")[0] || checkpointTuple.ts || new Date().toISOString());
+
+
+    return new Promise((resolve, reject) => {
+        db.transaction(async (tx) => {
+            try {
+                await executeSqlAsync(tx,
+                    "INSERT OR REPLACE INTO langgraph_checkpoints (thread_id, checkpoint_id, parent_checkpoint_id, checkpoint, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    [threadId, checkpointId, parentCheckpointId, checkpointStr, updatedAt]
+                );
+                resolve();
+            } catch (error) {
+                console.error(`[DB] Error putting LangGraph checkpoint (thread: ${threadId}, ckpt: ${checkpointId}):`, error);
+                reject(error);
+            }
+        });
+    });
+}
+
+export async function listLangGraphCheckpointsFromDB(threadId, limit, beforeConfig = null) {
+    await openDB();
+    return new Promise((resolve, reject) => {
+        db.readTransaction(async (tx) => {
+            try {
+                let sql = "SELECT checkpoint FROM langgraph_checkpoints WHERE thread_id = ?";
+                const params = [threadId];
+                let beforeTimestamp = null;
+
+                if (beforeConfig?.configurable?.checkpoint_id) {
+                    // Attempt to get the timestamp of the 'before' checkpoint to filter accurately
+                    const beforeCheckpointTuple = await getLangGraphCheckpointFromDB(threadId, beforeConfig.configurable.checkpoint_id);
+                    if (beforeCheckpointTuple) {
+                        beforeTimestamp = Date.parse(beforeCheckpointTuple.ts || beforeCheckpointTuple.config?.configurable?.checkpoint_id?.split("T")[0] || new Date(0).toISOString());
+                        if (beforeTimestamp) {
+                            sql += " AND updated_at < ?";
+                            params.push(beforeTimestamp);
+                        } else {
+                             console.warn("[DB] list: Could not determine timestamp for 'before' checkpoint_id:", beforeConfig.configurable.checkpoint_id);
+                        }
+                    } else {
+                        console.warn("[DB] list: 'before' checkpoint_id not found:", beforeConfig.configurable.checkpoint_id);
+                    }
+                }
+
+                sql += " ORDER BY updated_at DESC";
+                if (limit) {
+                    sql += " LIMIT ?";
+                    params.push(limit);
+                }
+
+                const resultSet = await executeSqlAsync(tx, sql, params);
+                const checkpoints = [];
+                for (let i = 0; i < resultSet.rows.length; i++) {
+                    const checkpointStr = resultSet.rows.item(i).checkpoint;
+                    if (checkpointStr) {
+                        checkpoints.push(JSON.parse(checkpointStr));
+                    }
+                }
+                resolve(checkpoints);
+            } catch (error) {
+                console.error(`[DB] Error listing LangGraph checkpoints (thread: ${threadId}):`, error);
+                reject(error);
+            }
+        });
+    });
+}
