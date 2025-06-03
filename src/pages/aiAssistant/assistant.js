@@ -19,6 +19,7 @@ import {
 } from "./db";
 import { CordovaSqliteSaver } from "./memory";
 import { SYSTEM_PROMPT } from "./system_prompt";
+import { allTools } from "./tools";
 
 export default function openAIAssistantPage() {
 	// References
@@ -46,9 +47,13 @@ export default function openAIAssistantPage() {
 		model: "gemini-2.0-flash",
 		apiKey: GEMINI_API_KEY,
 	});
+
+	// Get all tools as an array for the agent including search
+	const toolsArray = Object.values(allTools);
+
 	const agent = createReactAgent({
 		llm: model,
-		tools: [searchTool],
+		tools: toolsArray,
 		checkpointSaver: agentCheckpointer,
 		stateModifier: SYSTEM_PROMPT,
 	});
