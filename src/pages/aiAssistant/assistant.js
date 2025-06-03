@@ -36,7 +36,7 @@ export default function openAIAssistantPage() {
 	let currentController = null;
 	let aiTabInstance;
 
-	const GEMINI_API_KEY = "AIzaSyBuDDGk2HM5bH7TwuQwEvMeLvPtlFVCKsQ"; // Replace
+	const GEMINI_API_KEY = ""; // Replace
 
 	const searchTool = {
 		googleSearch: {},
