@@ -182,14 +182,15 @@
       border-radius: 0.375rem;
       color: var(--primary-text-color);
       font-size: 0.875rem;
-      resize: vertical;
+      resize: none;
       transition: all 0.2s ease;
-    }
+      box-sizing: border-box;
 
-    .edit-textarea:focus {
-      outline: none;
-      border-color: var(--active-color);
-      box-shadow: 0 0 0 2px rgba(35, 116, 225, 0.1);
+      &:focus {
+        outline: none;
+        border-color: var(--active-color);
+        box-shadow: 0 0 0 2px rgba(35, 116, 225, 0.1);
+      }
     }
 
     .edit-actions {
