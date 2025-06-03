@@ -6,7 +6,7 @@ import {
 	getCheckpointId,
 } from "@langchain/langgraph-checkpoint";
 import { executeSqlAsync, openDB } from "./db";
-
+import { decode } from "utils/encodings";
 const checkpointMetadataKeys = ["source", "step", "writes", "parents"];
 function validateKeys(keys) {
 	return keys;
@@ -14,13 +14,13 @@ function validateKeys(keys) {
 const validCheckpointMetadataKeys = validateKeys(checkpointMetadataKeys);
 
 // Helper to convert Uint8Array or other forms to a UTF-8 string for DB storage
-function ensureStringForDB(serializedData) {
+async function ensureStringForDB(serializedData) {
 	if (typeof serializedData === "string") {
 		return serializedData;
 	}
 	if (serializedData instanceof Uint8Array) {
 		try {
-			return new TextDecoder().decode(serializedData);
+			return await decode(serializedData.buffer, "UTF-8");
 		} catch (e) {
 			console.error(
 				"TextDecoder failed for Uint8Array, falling back to JSON.stringify:",
@@ -286,10 +286,10 @@ export class CordovaSqliteSaver extends BaseCheckpointSaver {
 		const [typeMd, rawSerializedMetadata] = this.serde.dumpsTyped(metadata);
 
 		// Ensure strings for DB
-		const finalSerializedCheckpoint = ensureStringForDB(
+		const finalSerializedCheckpoint = await ensureStringForDB(
 			rawSerializedCheckpoint,
 		);
-		const finalSerializedMetadata = ensureStringForDB(rawSerializedMetadata);
+		const finalSerializedMetadata = await ensureStringForDB(rawSerializedMetadata);
 
 		return new Promise((resolve, reject) => {
 			this.db.transaction((tx) => {
@@ -329,52 +329,85 @@ export class CordovaSqliteSaver extends BaseCheckpointSaver {
 	 * @returns {Promise<void>} A promise that resolves when writes are stored.
 	 */
 	async putWrites(config, writes, taskId) {
-		if (!this.isSetup) await this.setup();
+    if (!this.isSetup) await this.setup();
 
-		const thread_id = config.configurable?.thread_id;
-		const checkpoint_ns = config.configurable?.checkpoint_ns ?? "";
-		const checkpoint_id = config.configurable?.checkpoint_id;
+    const thread_id = config.configurable?.thread_id;
+    const checkpoint_ns = config.configurable?.checkpoint_ns ?? "";
+    const checkpoint_id = config.configurable?.checkpoint_id;
 
-		if (!thread_id || !checkpoint_id) {
-			throw new Error(
-				"Missing thread_id or checkpoint_id in config for putWrites.",
-			);
-		}
-		if (!writes || writes.length === 0) {
-			return Promise.resolve();
-		}
+    if (!thread_id || !checkpoint_id) {
+        throw new Error("[CSCS] Missing thread_id or checkpoint_id in config for putWrites.");
+    }
+    if (!writes || writes.length === 0) {
+        return; // Nothing to write
+    }
 
-		return new Promise((resolve, reject) => {
-			this.db.transaction((tx) => {
-				const writePromises = writes.map((writeTuple, idx) => {
-					const channel = writeTuple[0];
-					const value = writeTuple[1];
-					const [type, rawSerializedValue] = this.serde.dumpsTyped(value);
-					const finalSerializedValue = ensureStringForDB(rawSerializedValue); // Ensure string
+    // Stage 1: Prepare all data for writing
+    let preparedWrites;
+    try {
+        preparedWrites = await Promise.all(
+            writes.map(async (writeTuple, idx) => {
+                const channel = writeTuple[0];
+                const value = writeTuple[1];
+                const [type, rawSerializedValue] = this.serde.dumpsTyped(value);
+                const finalSerializedValue = await ensureStringForDB(rawSerializedValue);
+                const dbIdx = WRITES_IDX_MAP[channel] !== undefined ? WRITES_IDX_MAP[channel] : idx;
+                return { channel, type, finalSerializedValue, dbIdx };
+            })
+        );
+    } catch (serializationError) {
+        console.error("[CSCS] Error during putWrites serialization phase:", serializationError);
+        throw serializationError;
+    }
 
-					return executeSqlAsync(
-						tx,
-						`INSERT OR REPLACE INTO writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, value)
+    // Stage 2: Execute all SQL writes sequentially within a single transaction using callbacks
+    return new Promise((resolve, reject) => {
+        this.db.transaction(
+            (tx) => {
+                let pending = preparedWrites.length;
+                let hasError = false;
+
+                preparedWrites.forEach(({ channel, type, finalSerializedValue, dbIdx }) => {
+                    tx.executeSql(
+                        `INSERT OR REPLACE INTO writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, value)
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-						[
-							thread_id,
-							checkpoint_ns,
-							checkpoint_id,
-							taskId,
-							WRITES_IDX_MAP[channel] || idx,
-							channel,
-							type,
-							finalSerializedValue,
-						],
-					);
-				});
+                        [
+                            thread_id,
+                            checkpoint_ns,
+                            checkpoint_id,
+                            taskId,
+                            dbIdx,
+                            channel,
+                            type,
+                            finalSerializedValue,
+                        ],
+                        () => {
+                            if (--pending === 0 && !hasError) {
+                                resolve();
+                            }
+                        },
+                        (tx, error) => {
+                            if (!hasError) {
+                                hasError = true;
+                                console.error("[CSCS] putWrites SQL error:", error);
+                                reject(error);
+                            }
+                            return true; // still try remaining queries
+                        }
+                    );
+                });
 
-				Promise.all(writePromises)
-					.then(() => resolve())
-					.catch(reject); // Will catch first error from Promise.all
-			}, reject); // Transaction errors
-		});
-	}
+                if (pending === 0) {
+                    resolve();
+                }
+            },
+            (transactionError) => {
+                console.error("[CSCS] putWrites Transaction failed:", transactionError);
+                reject(transactionError);
+            }
+        );
+    });
+}
 
 	/**
 	 * Asynchronously lists checkpoints for a given thread.
@@ -383,81 +416,80 @@ export class CordovaSqliteSaver extends BaseCheckpointSaver {
 	 * @yields {object} A checkpoint tuple.
 	 */
 	async *list(config, options) {
-		if (!this.isSetup) await this.setup();
+    if (!this.isSetup) await this.setup();
 
-		const { limit, before, filter } = options ?? {};
-		const thread_id = config.configurable?.thread_id;
-		const checkpoint_ns = config.configurable?.checkpoint_ns ?? "";
+    const { limit, before, filter } = options ?? {};
+    const thread_id = config.configurable?.thread_id;
+    const checkpoint_ns = config.configurable?.checkpoint_ns ?? "";
 
-		if (!thread_id) {
-			return;
-		}
+    if (!thread_id) return;
 
-		let checkpointIdRows = []; // To store { checkpoint_id: string }
-		try {
-			await new Promise((resolveOuter, rejectOuter) => {
-				this.db.readTransaction((tx) => {
-					let sql = `SELECT checkpoint_id FROM checkpoints`; // Only fetch ID initially
-					const params = [];
-					const whereClauses = ["thread_id = ?", "checkpoint_ns = ?"];
-					params.push(thread_id, checkpoint_ns);
+    let checkpointIdRows = [];
 
-					if (before?.configurable?.checkpoint_id) {
-						whereClauses.push("checkpoint_id < ?");
-						params.push(before.configurable.checkpoint_id);
-					}
-					if (filter && Object.keys(filter).length > 0) {
-					}
-					if (whereClauses.length > 0) {
-						sql += ` WHERE ${whereClauses.join(" AND ")}`;
-					}
-					sql += ` ORDER BY checkpoint_id DESC`;
-					if (limit) {
-						// This limit is applied before JS filtering, so fetch more if JS filtering is heavy
-						sql += ` LIMIT ${Number.parseInt(limit, 10) * (filter ? 5 : 1)}`; // Fetch more if filtering
-					}
+    try {
+        await new Promise((resolveOuter, rejectOuter) => {
+            this.db.readTransaction((tx) => {
+                let sql = `SELECT checkpoint_id FROM checkpoints`;
+                const params = [];
+                const whereClauses = ["thread_id = ?", "checkpoint_ns = ?"];
+                params.push(thread_id, checkpoint_ns);
 
-					executeSqlAsync(tx, sql, params)
-						.then((resultSet) => {
-							for (let i = 0; i < resultSet.rows.length; i++) {
-								checkpointIdRows.push(resultSet.rows.item(i));
-							}
-							resolveOuter();
-						})
-						.catch(rejectOuter);
-				}, rejectOuter);
-			});
+                if (before?.configurable?.checkpoint_id) {
+                    whereClauses.push("checkpoint_id < ?");
+                    params.push(before.configurable.checkpoint_id);
+                }
 
-			let yieldedCount = 0;
-			for (const idRow of checkpointIdRows) {
-				const tupleConfig = {
-					configurable: {
-						thread_id,
-						checkpoint_ns,
-						checkpoint_id: idRow.checkpoint_id,
-					},
-				};
-				const fullTuple = await this.getTuple(tupleConfig);
-				if (fullTuple) {
-					if (
-						filter &&
-						fullTuple.metadata &&
-						!Object.entries(filter).every(
-							([key, value]) => fullTuple.metadata[key] === value,
-						)
-					) {
-						continue; // Skip if JS filter doesn't match
-					}
-					yield fullTuple;
-					yieldedCount++;
-					if (limit !== undefined && yieldedCount >= limit) break;
-				}
-			}
-		} catch (error) {
-			console.error(
-				`list: Error fetching/processing for thread ${thread_id}:`,
-				error,
-			);
-		}
-	}
+                if (whereClauses.length > 0) {
+                    sql += ` WHERE ${whereClauses.join(" AND ")}`;
+                }
+
+                sql += ` ORDER BY checkpoint_id DESC`;
+
+                if (limit) {
+                    sql += ` LIMIT ${parseInt(limit, 10) * (filter ? 5 : 1)}`;
+                }
+
+                executeSqlAsync(tx, sql, params)
+                    .then((resultSet) => {
+                        for (let i = 0; i < resultSet.rows.length; i++) {
+                            checkpointIdRows.push(resultSet.rows.item(i));
+                        }
+                        resolveOuter();
+                    })
+                    .catch(rejectOuter);
+            }, rejectOuter); // <- If the transaction itself fails
+        });
+
+        let yieldedCount = 0;
+        for (const idRow of checkpointIdRows) {
+            const tupleConfig = {
+                configurable: {
+                    thread_id,
+                    checkpoint_ns,
+                    checkpoint_id: idRow.checkpoint_id,
+                },
+            };
+
+            const fullTuple = await this.getTuple(tupleConfig);
+
+            if (fullTuple) {
+                if (
+                    filter &&
+                    fullTuple.metadata &&
+                    !Object.entries(filter).every(
+                        ([key, value]) => fullTuple.metadata[key] === value,
+                    )
+                ) {
+                    continue;
+                }
+
+                yield fullTuple;
+                yieldedCount++;
+                if (limit !== undefined && yieldedCount >= limit) break;
+            }
+        }
+    } catch (error) {
+        console.error(`list: Error fetching/processing for thread ${thread_id}:`, error);
+    }
+}
 }
