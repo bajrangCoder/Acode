@@ -33,7 +33,7 @@ NC=''
 script1="node ./utils/config.js $mode $app"
 script2="webpack --progress --mode $webpackmode "
 script3="node ./utils/loadStyles.js"
-script4="cordova build android -- --gradleArg="-PcdvBuildToolsVersion=34.0.0"
+script4="cordova build $platform $cordovamode"
 eval "
 echo \"${RED}$script1${NC}\";
 $script1;
