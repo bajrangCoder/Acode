@@ -115,6 +115,56 @@ export default class TerminalComponent {
 		this.terminal.onBell(() => {
 			this.onBell?.();
 		});
+
+		// Handle copy/paste keybindings
+		this.setupCopyPasteHandlers();
+	}
+
+	/**
+	 * Setup copy/paste keyboard handlers
+	 */
+	setupCopyPasteHandlers() {
+		// Add keyboard event listener to terminal element
+		this.terminal.attachCustomKeyEventHandler((event) => {
+			// Check for Ctrl+Shift+C (copy)
+			if (event.ctrlKey && event.shiftKey && event.key === "C") {
+				event.preventDefault();
+				this.copySelection();
+				return false;
+			}
+
+			// Check for Ctrl+Shift+V (paste)
+			if (event.ctrlKey && event.shiftKey && event.key === "V") {
+				event.preventDefault();
+				this.pasteFromClipboard();
+				return false;
+			}
+
+			// Return true to allow normal processing for other keys
+			return true;
+		});
+	}
+
+	/**
+	 * Copy selected text to clipboard
+	 */
+	copySelection() {
+		if (!this.terminal?.hasSelection()) return;
+		const selectedStr = this.terminal?.getSelection();
+		if (selectedStr && cordova?.plugins?.clipboard) {
+			cordova.plugins.clipboard.copy(selectedStr);
+		}
+	}
+
+	/**
+	 * Paste text from clipboard
+	 */
+	pasteFromClipboard() {
+		if (cordova?.plugins?.clipboard) {
+			cordova.plugins.clipboard.paste((text) => {
+				this.terminal?.paste(text);
+			});
+		}
 	}
 
 	/**
