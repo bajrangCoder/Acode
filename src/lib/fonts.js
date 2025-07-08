@@ -29,6 +29,15 @@ add(
 );
 
 add(
+	"MesloLGS NF Regular",
+	`@font-face {
+  font-family: 'MesloLGS NF Regular';
+  font-style: normal;
+  src: url(../res/fonts/MesloLGS NF Regular.ttf) format('truetype');
+}`,
+);
+
+add(
 	"Source Code",
 	`@font-face {
   font-family: 'Source Code';
