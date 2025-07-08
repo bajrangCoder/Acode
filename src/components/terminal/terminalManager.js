@@ -122,13 +122,21 @@ class TerminalManager {
 		};
 
 		// Handle window resize
-		// const resizeObserver = new ResizeObserver(() => {
-		// 	setTimeout(() => {
-		// 		terminalComponent.fit();
-		// 	}, 100);
-		// });
+		const resizeObserver = new ResizeObserver(() => {
+			setTimeout(() => {
+				terminalComponent.fit();
+			}, 100);
+		});
 
-		//resizeObserver.observe(terminalFile.container);
+		// Wait for the terminal container to be available, then observe it
+		setTimeout(() => {
+			const containerElement = terminalFile.content;
+			if (containerElement && containerElement instanceof Element) {
+				resizeObserver.observe(containerElement);
+			} else {
+				console.warn("Terminal container not available for ResizeObserver");
+			}
+		}, 200);
 
 		// Terminal event handlers
 		terminalComponent.onConnect = () => {
@@ -155,7 +163,7 @@ class TerminalManager {
 		// Store references for cleanup
 		terminalFile._terminalId = terminalId;
 		terminalFile.terminalComponent = terminalComponent;
-		//terminalFile._resizeObserver = resizeObserver;
+		terminalFile._resizeObserver = resizeObserver;
 	}
 
 	/**
