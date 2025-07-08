@@ -23,6 +23,14 @@ class TerminalManager {
 			const terminalId = `terminal_${++this.terminalCounter}`;
 			const terminalName = options.name || `Terminal ${this.terminalCounter}`;
 
+			// Check if terminal is installed before proceeding
+			if (options.serverMode !== false) {
+				const installationResult = await this.checkAndInstallTerminal();
+				if (!installationResult.success) {
+					throw new Error(installationResult.error);
+				}
+			}
+
 			// Create terminal component
 			const terminalComponent = new TerminalComponent({
 				serverMode: options.serverMode !== false,
@@ -102,6 +110,123 @@ class TerminalManager {
 	}
 
 	/**
+	 * Check if terminal is installed and install if needed
+	 * @returns {Promise<{success: boolean, error?: string}>}
+	 */
+	async checkAndInstallTerminal() {
+		try {
+			// Check if terminal is already installed
+			const isInstalled = await Terminal.isInstalled();
+			if (isInstalled) {
+				return { success: true };
+			}
+
+			// Check if terminal is supported on this device
+			const isSupported = await Terminal.isSupported();
+			if (!isSupported) {
+				return {
+					success: false,
+					error: "Terminal is not supported on this device architecture",
+				};
+			}
+
+			// Create installation progress terminal
+			const installTerminal = await this.createInstallationTerminal();
+
+			// Install terminal with progress logging
+			await Terminal.install(
+				(message) => {
+					installTerminal.component.write(`${message}\r\n`);
+				},
+				(error) => {
+					installTerminal.component.write(`\x1b[31mError: ${error}\x1b[0m\r\n`);
+				},
+			);
+			return { success: true };
+		} catch (error) {
+			console.error("Terminal installation failed:", error);
+			return {
+				success: false,
+				error: `Terminal installation failed: ${error.message}`,
+			};
+		}
+	}
+
+	/**
+	 * Create a terminal for showing installation progress
+	 * @returns {Promise<object>} Installation terminal instance
+	 */
+	async createInstallationTerminal() {
+		const terminalId = `install_terminal_${++this.terminalCounter}`;
+		const terminalName = "Terminal Installation";
+
+		// Create terminal component in local mode (no server needed)
+		const terminalComponent = new TerminalComponent({
+			serverMode: false,
+		});
+
+		// Create container
+		const terminalContainer = tag("div", {
+			className: "terminal-content",
+			id: `terminal-${terminalId}`,
+		});
+
+		// Terminal styles
+		const terminalStyles = this.getTerminalStyles();
+		const terminalStyle = tag("style", {
+			textContent: terminalStyles,
+		});
+		document.body.appendChild(terminalStyle);
+
+		// Create EditorFile for terminal
+		const terminalFile = new EditorFile(terminalName, {
+			type: "terminal",
+			content: terminalContainer,
+			tabIcon: "icon download",
+			render: true,
+		});
+
+		// Wait for tab creation and setup
+		const terminalInstance = await new Promise((resolve, reject) => {
+			setTimeout(async () => {
+				try {
+					// Mount terminal component
+					terminalComponent.mount(terminalContainer);
+
+					// Write initial message
+					terminalComponent.write("🚀 Installing Terminal Environment...\r\n");
+					terminalComponent.write(
+						"This may take a few minutes depending on your connection.\r\n\r\n",
+					);
+
+					// Setup event handlers
+					this.setupTerminalHandlers(
+						terminalFile,
+						terminalComponent,
+						terminalId,
+					);
+
+					const instance = {
+						id: terminalId,
+						name: terminalName,
+						component: terminalComponent,
+						file: terminalFile,
+						container: terminalContainer,
+					};
+
+					this.terminals.set(terminalId, instance);
+					resolve(instance);
+				} catch (error) {
+					console.error("Failed to create installation terminal:", error);
+					reject(error);
+				}
+			}, 100);
+		});
+
+		return terminalInstance;
+	}
+
+	/**
 	 * Setup terminal event handlers
 	 * @param {EditorFile} terminalFile - Terminal file instance
 	 * @param {TerminalComponent} terminalComponent - Terminal component
@@ -150,6 +275,8 @@ class TerminalManager {
 		terminalComponent.onError = (error) => {
 			console.error(`Terminal ${terminalId} error:`, error);
 			window.toast?.("Terminal connection error");
+			// Close the terminal tab on error
+			this.closeTerminal(terminalId);
 		};
 
 		terminalComponent.onTitleChange = (title) => {

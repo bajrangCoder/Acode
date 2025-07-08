@@ -190,11 +190,32 @@ export default class TerminalComponent {
 		}
 
 		try {
+			// Check if terminal is installed before starting AXS
+			if (!(await Terminal.isInstalled())) {
+				throw new Error(
+					"Terminal not installed. Please install terminal first.",
+				);
+			}
+
 			// Start AXS if not running
 			if (!(await Terminal.isAxsRunning())) {
-				await Terminal.startAxs();
-				// Wait a bit for server to start
-				await new Promise((resolve) => setTimeout(resolve, 2000));
+				await Terminal.startAxs(false, () => {}, console.error);
+
+				// Check if AXS started with interval polling
+				const maxRetries = 10;
+				let retries = 0;
+				while (retries < maxRetries) {
+					await new Promise((resolve) => setTimeout(resolve, 1000));
+					if (await Terminal.isAxsRunning()) {
+						break;
+					}
+					retries++;
+				}
+
+				// If AXS still not running after retries, throw error
+				if (!(await Terminal.isAxsRunning())) {
+					throw new Error("Failed to start AXS server after multiple attempts");
+				}
 			}
 
 			const requestBody = {
