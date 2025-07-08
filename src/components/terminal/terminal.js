@@ -339,11 +339,29 @@ export default class TerminalComponent {
 	/**
 	 * Search in terminal
 	 * @param {string} term - Search term
-	 * @param {object} options - Search options
+	 * @param {number} skip Number of search results to skip
+	 * @param {boolean} backward Whether to search backward
 	 */
-	search(term, options = {}) {
+	search(term, skip, backward) {
 		if (this.searchAddon) {
-			return this.searchAddon.findNext(term, options);
+			const searchOptions = {
+				regex: appSettings.value.search.regExp || false,
+				wholeWord: appSettings.value.search.wholeWord || false,
+				caseSensitive: appSettings.value.search.caseSensitive || false,
+				decorations: {
+					matchBorder: "#FFA500",
+					activeMatchBorder: "#FFFF00",
+				},
+			};
+			if (!term) {
+				return false;
+			}
+
+			if (backward) {
+				return this.searchAddon.findPrevious(term, searchOptions);
+			} else {
+				return this.searchAddon.findNext(term, searchOptions);
+			}
 		}
 		return false;
 	}
