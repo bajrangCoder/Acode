@@ -12,16 +12,14 @@ export const DEFAULT_TERMINAL_SETTINGS = {
 	tabStopWidth: 4,
 	convertEol: true,
 	letterSpacing: 0,
+	imageSupport: false,
+	fontLigatures: false,
 };
 
 export function getTerminalSettings() {
 	const settings = appSettings.value.terminalSettings || {};
 	return {
 		...DEFAULT_TERMINAL_SETTINGS,
-		fontFamily:
-			settings.fontFamily ||
-			DEFAULT_TERMINAL_SETTINGS.fontFamily ||
-			appSettings.value.fontFamily,
 		...settings,
 	};
 }

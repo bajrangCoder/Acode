@@ -131,6 +131,16 @@ export default function terminalSettings() {
 			text: "Convert EOL",
 			checkbox: terminalValues.convertEol,
 		},
+		{
+			key: "imageSupport",
+			text: "Image Support",
+			checkbox: terminalValues.imageSupport,
+		},
+		{
+			key: "fontLigatures",
+			text: "Font Ligatures",
+			checkbox: terminalValues.fontLigatures,
+		},
 	];
 
 	return settingsPage(title, items, callback);
@@ -158,13 +168,13 @@ export default function terminalSettings() {
  * @param {string} key
  * @param {any} value
  */
-function updateActiveTerminals(key, value) {
+async function updateActiveTerminals(key, value) {
 	// Find all terminal tabs and update their settings
 	const terminalTabs = editorManager.files.filter(
 		(file) => file.type === "terminal",
 	);
 
-	terminalTabs.forEach((tab) => {
+	terminalTabs.forEach(async (tab) => {
 		if (tab.terminalComponent) {
 			const terminalOptions = {};
 
@@ -173,7 +183,17 @@ function updateActiveTerminals(key, value) {
 					tab.terminalComponent.terminal.options.fontSize = value;
 					break;
 				case "fontFamily":
+					// Load font if it's not already loaded
+					try {
+						await fonts.loadFont(value);
+					} catch (error) {
+						console.warn(`Failed to load font ${value}:`, error);
+					}
 					tab.terminalComponent.terminal.options.fontFamily = value;
+					tab.terminalComponent.terminal.refresh(
+						0,
+						tab.terminalComponent.terminal.rows - 1,
+					);
 					break;
 				case "fontWeight":
 					tab.terminalComponent.terminal.options.fontWeight = value;
@@ -202,6 +222,12 @@ function updateActiveTerminals(key, value) {
 				case "theme":
 					tab.terminalComponent.terminal.options.theme =
 						TerminalThemeManager.getTheme(value);
+					break;
+				case "imageSupport":
+					tab.terminalComponent.updateImageSupport(value);
+					break;
+				case "fontLigatures":
+					tab.terminalComponent.updateFontLigatures(value);
 					break;
 			}
 		}

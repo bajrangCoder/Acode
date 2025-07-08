@@ -67,22 +67,25 @@ class TerminalManager {
 							);
 						}
 
+						// Use PID as unique ID if available, otherwise fall back to terminalId
+						const uniqueId = terminalComponent.pid || terminalId;
+
 						// Setup event handlers
 						this.setupTerminalHandlers(
 							terminalFile,
 							terminalComponent,
-							terminalId,
+							uniqueId,
 						);
 
 						const instance = {
-							id: terminalId,
+							id: uniqueId,
 							name: terminalName,
 							component: terminalComponent,
 							file: terminalFile,
 							container: terminalContainer,
 						};
 
-						this.terminals.set(terminalId, instance);
+						this.terminals.set(uniqueId, instance);
 						resolve(instance);
 					} catch (error) {
 						console.error("Failed to initialize terminal:", error);
@@ -143,12 +146,15 @@ class TerminalManager {
 
 		terminalComponent.onTitleChange = (title) => {
 			if (title) {
-				terminalFile.filename = title;
+				// Format terminal title as "Terminal ! - title"
+				const formattedTitle = `Terminal ${this.terminalCounter} - ${title}`;
+				terminalFile.filename = formattedTitle;
 			}
 		};
 
 		// Store references for cleanup
 		terminalFile._terminalId = terminalId;
+		terminalFile.terminalComponent = terminalComponent;
 		//terminalFile._resizeObserver = resizeObserver;
 	}
 

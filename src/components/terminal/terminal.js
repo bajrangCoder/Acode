@@ -5,13 +5,16 @@
 
 import { AttachAddon } from "@xterm/addon-attach";
 import { FitAddon } from "@xterm/addon-fit";
+import { ImageAddon } from "@xterm/addon-image";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as Xterm } from "@xterm/xterm";
 import confirm from "dialogs/confirm";
+import fonts from "lib/fonts";
 import appSettings from "lib/settings";
+import LigaturesAddon from "./ligatures";
 import { getTerminalSettings } from "./terminalDefaults";
 import TerminalThemeManager from "./terminalThemeManager";
 
@@ -45,6 +48,8 @@ export default class TerminalComponent {
 		this.unicode11Addon = null;
 		this.searchAddon = null;
 		this.webLinksAddon = null;
+		this.imageAddon = null;
+		this.ligaturesAddon = null;
 		this.container = null;
 		this.websocket = null;
 		this.pid = null;
@@ -77,12 +82,17 @@ export default class TerminalComponent {
 		this.terminal.loadAddon(this.unicode11Addon);
 		this.terminal.loadAddon(this.searchAddon);
 		this.terminal.loadAddon(this.webLinksAddon);
-		try {
-			this.terminal.loadAddon(this.webglAddon);
-		} catch (error) {
-			console.error("Failed to load WebglAddon:", error);
-			this.webglAddon.dispose();
+
+		// Load conditional addons based on settings
+		const terminalSettings = getTerminalSettings();
+
+		// Load image addon if enabled
+		if (terminalSettings.imageSupport) {
+			this.loadImageAddon();
 		}
+
+		// Load font if specified
+		this.loadTerminalFont();
 
 		// Set up terminal event handlers
 		this.setupEventHandlers();
@@ -138,12 +148,23 @@ export default class TerminalComponent {
 		this.container = container;
 
 		try {
-			// Ensure container has proper dimensions
-			if (container.offsetHeight === 0) {
-				container.style.height = "400px";
+			try {
+				this.terminal.loadAddon(this.webglAddon);
+				this.terminal.open(container);
+			} catch (error) {
+				console.error("Failed to load WebglAddon:", error);
+				this.webglAddon.dispose();
 			}
 
-			this.terminal.open(container);
+			if (!this.terminal.element) {
+				// webgl loading failed for some reason, attach with DOM renderer
+				this.terminal.open(container);
+			}
+			const terminalSettings = getTerminalSettings();
+			// Load ligatures addon if enabled
+			if (terminalSettings.fontLigatures) {
+				this.loadLigaturesAddon();
+			}
 
 			// Wait for terminal to render then fit
 			setTimeout(() => {
@@ -355,6 +376,100 @@ export default class TerminalComponent {
 	}
 
 	/**
+	 * Load image addon
+	 */
+	loadImageAddon() {
+		if (!this.imageAddon) {
+			try {
+				this.imageAddon = new ImageAddon();
+				this.terminal.loadAddon(this.imageAddon);
+			} catch (error) {
+				console.error("Failed to load ImageAddon:", error);
+			}
+		}
+	}
+
+	/**
+	 * Dispose image addon
+	 */
+	disposeImageAddon() {
+		if (this.imageAddon) {
+			try {
+				this.imageAddon.dispose();
+				this.imageAddon = null;
+			} catch (error) {
+				console.error("Failed to dispose ImageAddon:", error);
+			}
+		}
+	}
+
+	/**
+	 * Update image support setting
+	 * @param {boolean} enabled - Whether to enable image support
+	 */
+	updateImageSupport(enabled) {
+		if (enabled) {
+			this.loadImageAddon();
+		} else {
+			this.disposeImageAddon();
+		}
+	}
+
+	/**
+	 * Load ligatures addon
+	 */
+	loadLigaturesAddon() {
+		if (!this.ligaturesAddon) {
+			try {
+				this.ligaturesAddon = new LigaturesAddon();
+				this.terminal.loadAddon(this.ligaturesAddon);
+			} catch (error) {
+				console.error("Failed to load LigaturesAddon:", error);
+			}
+		}
+	}
+
+	/**
+	 * Dispose ligatures addon
+	 */
+	disposeLigaturesAddon() {
+		if (this.ligaturesAddon) {
+			try {
+				this.ligaturesAddon.dispose();
+				this.ligaturesAddon = null;
+			} catch (error) {
+				console.error("Failed to dispose LigaturesAddon:", error);
+			}
+		}
+	}
+
+	/**
+	 * Update font ligatures setting
+	 * @param {boolean} enabled - Whether to enable font ligatures
+	 */
+	updateFontLigatures(enabled) {
+		if (enabled) {
+			this.loadLigaturesAddon();
+		} else {
+			this.disposeLigaturesAddon();
+		}
+	}
+
+	/**
+	 * Load terminal font if it's not already loaded
+	 */
+	async loadTerminalFont() {
+		const fontFamily = this.options.fontFamily;
+		if (fontFamily && fonts.get(fontFamily)) {
+			try {
+				await fonts.loadFont(fontFamily);
+			} catch (error) {
+				console.warn(`Failed to load terminal font ${fontFamily}:`, error);
+			}
+		}
+	}
+
+	/**
 	 * Terminate terminal session
 	 */
 	async terminate() {
@@ -378,6 +493,10 @@ export default class TerminalComponent {
 	 */
 	dispose() {
 		this.terminate();
+
+		// Dispose addons
+		this.disposeImageAddon();
+		this.disposeLigaturesAddon();
 
 		if (this.terminal) {
 			this.terminal.dispose();
