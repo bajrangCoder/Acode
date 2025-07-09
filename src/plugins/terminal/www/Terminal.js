@@ -186,7 +186,7 @@ const Terminal = {
             });
 
             const alpineExists = await new Promise((resolve, reject) => {
-                system.fileExists(`${filesDir}/alpine.tar.gz`, false, (result) => {
+                system.fileExists(`${filesDir}/alpine`, false, (result) => {
                     resolve(result == 1);
                 }, reject);
             });
@@ -216,6 +216,100 @@ const Terminal = {
             system.getArch((arch) => {
                 resolve(["arm64-v8a", "armeabi-v7a", "x86_64"].includes(arch));
             }, reject);
+        });
+    },
+
+    backup(){
+        return new Promise(async (resolve, reject) => {
+            if(!await this.isInstalled()){
+                reject("Alpine is not installed.")
+                return
+            }
+            const cmd = `
+            set -e
+            
+            INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
+
+            if [ "$FDROID" = "true" ]; then
+                INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
+            fi
+
+            
+            tar -cf $PREFIX/aterm_backup.tar $INCLUDE_FILES
+            echo "ok"
+            `
+           const result = await Executor.execute(cmd)
+           if(result === "ok"){
+            resolve(cordova.file.dataDirectory + "aterm_backup.tar")
+           }else{
+            reject(result)
+           }
+        });
+    },
+    restore(){
+        return new Promise(async (resolve, reject) => {
+            if(await this.isAxsRunning()){
+                await this.stopAxs()
+            }
+            const cmd = `
+            set -e
+
+            if [ -f "$PREFIX/aterm_backup.tar" ]; then
+                
+            else
+                echo "Backup File does not exist"
+            fi
+
+
+            INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
+
+            if [ "$FDROID" = "true" ]; then
+                INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
+            fi
+
+            for item in $INCLUDE_FILES; do
+                rm -rf -- "$item"
+            done
+
+            
+            tar -xf $PREFIX/aterm_backup.tar -C $PREFIX
+            echo "ok"
+            `
+           const result = await Executor.execute(cmd)
+           if(result === "ok"){
+            resolve(result)
+           }else{
+            reject(result)
+           }
+        });
+    },
+    uninstall(){
+        return new Promise(async (resolve, reject) => {
+            if(await this.isAxsRunning()){
+                await this.stopAxs()
+            }
+
+            const cmd = `
+            set -e
+            
+            INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
+
+            if [ "$FDROID" = "true" ]; then
+                INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
+            fi
+
+            for item in $INCLUDE_FILES; do
+                rm -rf -- "$item"
+            done
+
+            echo "ok"
+            `
+           const result = await Executor.execute(cmd)
+           if(result === "ok"){
+            resolve(result)
+           }else{
+            reject(result)
+           }
         });
     }
 };
