@@ -54,7 +54,7 @@ class TerminalManager {
 			const terminalFile = new EditorFile(terminalName, {
 				type: "terminal",
 				content: terminalContainer,
-				tabIcon: "icon terminal",
+				tabIcon: "licons terminal",
 				render: true,
 			});
 
@@ -198,7 +198,7 @@ class TerminalManager {
 		const terminalFile = new EditorFile(terminalName, {
 			type: "terminal",
 			content: terminalContainer,
-			tabIcon: "icon download",
+			tabIcon: "icon save_alt",
 			render: true,
 		});
 

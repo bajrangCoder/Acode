@@ -91,7 +91,7 @@ export default function mainSettings() {
 		{
 			key: "terminal-settings",
 			text: "Terminal Settings",
-			icon: "terminal",
+			icon: "licons terminal",
 			index: 5,
 		},
 		{
