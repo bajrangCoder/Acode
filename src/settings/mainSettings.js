@@ -80,7 +80,7 @@ export default function mainSettings() {
 			key: "reset",
 			text: strings["restore default settings"],
 			icon: "historyrestore",
-			index: 5,
+			index: 6,
 		},
 		{
 			key: "preview-settings",
@@ -92,6 +92,7 @@ export default function mainSettings() {
 			key: "terminal-settings",
 			text: "Terminal Settings",
 			icon: "terminal",
+			index: 5,
 		},
 		{
 			key: "editSettings",
