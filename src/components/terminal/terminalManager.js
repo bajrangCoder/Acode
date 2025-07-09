@@ -134,15 +134,31 @@ class TerminalManager {
 			const installTerminal = await this.createInstallationTerminal();
 
 			// Install terminal with progress logging
-			await Terminal.install(
+			const installResult = await Terminal.install(
 				(message) => {
-					installTerminal.component.write(`${message}\r\n`);
+					// Remove stdout/stderr prefix for
+					const cleanMessage = message.replace(/^(stdout|stderr)\s+/, "");
+					installTerminal.component.write(`${cleanMessage}\r\n`);
 				},
 				(error) => {
-					installTerminal.component.write(`\x1b[31mError: ${error}\x1b[0m\r\n`);
+					// Remove stdout/stderr prefix
+					const cleanError = error.replace(/^(stdout|stderr)\s+/, "");
+					installTerminal.component.write(
+						`\x1b[31mError: ${cleanError}\x1b[0m\r\n`,
+					);
 				},
 			);
-			return { success: true };
+
+			// Only return success if Terminal.install() indicates success (exit code 0)
+			if (installResult === true) {
+				return { success: true };
+			} else {
+				return {
+					success: false,
+					error:
+						"Terminal installation failed - process did not exit with code 0",
+				};
+			}
 		} catch (error) {
 			console.error("Terminal installation failed:", error);
 			return {

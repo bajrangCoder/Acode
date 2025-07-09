@@ -12,26 +12,52 @@ const Terminal = {
      * @param {boolean} [installing=false] - Whether AXS is being started during installation.
      * @param {Function} [logger=console.log] - Function to log standard output.
      * @param {Function} [err_logger=console.error] - Function to log errors.
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>} - Returns true if installation completes with exit code 0, void if not installing
      */
     async startAxs(installing = false, logger = console.log, err_logger = console.error) {
         const filesDir = await new Promise((resolve, reject) => {
             system.getFilesDir(resolve, reject);
         });
 
-        readAsset("init-alpine.sh", async (content) => {
-            system.writeText(`${filesDir}/init-alpine.sh`, content, logger, err_logger);
-        });
+        if (installing) {
+            return new Promise((resolve, reject) => {
+                readAsset("init-alpine.sh", async (content) => {
+                    system.writeText(`${filesDir}/init-alpine.sh`, content, logger, err_logger);
+                });
 
-        readAsset("init-sandbox.sh", (content) => {
-            system.writeText(`${filesDir}/init-sandbox.sh`, content, logger, err_logger);
+                readAsset("init-sandbox.sh", (content) => {
+                    system.writeText(`${filesDir}/init-sandbox.sh`, content, logger, err_logger);
 
-            Executor.start("sh", (type, data) => {
-                logger(`${type} ${data}`);
-            }).then(async (uuid) => {
-                await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${installing ? "--installing" : ""}; exit`);
+                    Executor.start("sh", (type, data) => {
+                        logger(`${type} ${data}`);
+
+                        // Check for exit code during installation
+                        if (type === "exit") {
+                            resolve(data === "0");
+                        }
+                    }).then(async (uuid) => {
+                        await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${installing ? "--installing" : ""}; exit`);
+                    }).catch((error) => {
+                        err_logger("Failed to start AXS:", error);
+                        resolve(false);
+                    });
+                });
             });
-        });
+        } else {
+            readAsset("init-alpine.sh", async (content) => {
+                system.writeText(`${filesDir}/init-alpine.sh`, content, logger, err_logger);
+            });
+
+            readAsset("init-sandbox.sh", (content) => {
+                system.writeText(`${filesDir}/init-sandbox.sh`, content, logger, err_logger);
+
+                Executor.start("sh", (type, data) => {
+                    logger(`${type} ${data}`);
+                }).then(async (uuid) => {
+                    await Executor.write(uuid, `source ${filesDir}/init-sandbox.sh ${installing ? "--installing" : ""}; exit`);
+                });
+            });
+        }
     },
 
     /**
@@ -68,11 +94,11 @@ const Terminal = {
      * Also sets up additional dependencies for F-Droid variant.
      * @param {Function} [logger=console.log] - Function to log standard output.
      * @param {Function} [err_logger=console.error] - Function to log errors.
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>} - Returns true if installation completes with exit code 0
      */
     async install(logger = console.log, err_logger = console.error) {
-        if (await this.isInstalled()) return;
-        if (!(await this.isSupported())) return;
+        if (await this.isInstalled()) return true;
+        if (!(await this.isSupported())) return false;
 
         const filesDir = await new Promise((resolve, reject) => {
             system.getFilesDir(resolve, reject);
@@ -168,10 +194,12 @@ const Terminal = {
                 system.mkdirs(`${filesDir}/.extracted`, resolve, reject);
             });
 
-            this.startAxs(true, logger, err_logger);
+            const installResult = await this.startAxs(true, logger, err_logger);
+            return installResult;
 
         } catch (e) {
             err_logger("Installation failed:", e);
+            return false;
         }
     },
 
@@ -227,14 +255,14 @@ const Terminal = {
             }
             const cmd = `
             set -e
-            
+
             INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
 
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
             fi
 
-            
+
             tar -cf $PREFIX/aterm_backup.tar $INCLUDE_FILES
             echo "ok"
             `
@@ -255,7 +283,7 @@ const Terminal = {
             set -e
 
             if [ -f "$PREFIX/aterm_backup.tar" ]; then
-                
+
             else
                 echo "Backup File does not exist"
             fi
@@ -271,7 +299,7 @@ const Terminal = {
                 rm -rf -- "$item"
             done
 
-            
+
             tar -xf $PREFIX/aterm_backup.tar -C $PREFIX
             echo "ok"
             `
@@ -291,7 +319,7 @@ const Terminal = {
 
             const cmd = `
             set -e
-            
+
             INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
 
             if [ "$FDROID" = "true" ]; then
