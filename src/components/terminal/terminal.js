@@ -140,6 +140,29 @@ export default class TerminalComponent {
 				return false;
 			}
 
+			// For app-wide keybindings, dispatch them to the app's keyboard handler
+			if (event.ctrlKey || event.altKey || event.metaKey) {
+				// Skip modifier-only keys
+				if (["Control", "Alt", "Meta", "Shift"].includes(event.key)) {
+					return true;
+				}
+				const appEvent = new KeyboardEvent("keydown", {
+					key: event.key,
+					ctrlKey: event.ctrlKey,
+					shiftKey: event.shiftKey,
+					altKey: event.altKey,
+					metaKey: event.metaKey,
+					bubbles: true,
+					cancelable: true,
+				});
+
+				// Dispatch to document so it gets picked up by the app's keyboard handler
+				document.dispatchEvent(appEvent);
+
+				// Return false to prevent terminal from processing this key
+				return false;
+			}
+
 			// Return true to allow normal processing for other keys
 			return true;
 		});
