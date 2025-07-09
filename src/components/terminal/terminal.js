@@ -140,6 +140,13 @@ export default class TerminalComponent {
 				return false;
 			}
 
+			// Check for Ctrl+C (terminate)
+			if (event.ctrlKey && event.key === "C") {
+				event.preventDefault();
+				this.websocket?.send("\x03");
+				return false;
+			}
+
 			// For app-wide keybindings, dispatch them to the app's keyboard handler
 			if (event.ctrlKey || event.altKey || event.metaKey) {
 				// Skip modifier-only keys
