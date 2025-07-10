@@ -90,7 +90,7 @@ export default function mainSettings() {
 		},
 		{
 			key: "terminal-settings",
-			text: "Terminal Settings",
+			text: `${strings["terminal settings"]}`,
 			icon: "licons terminal",
 			index: 5,
 		},

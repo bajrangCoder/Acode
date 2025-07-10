@@ -7,7 +7,7 @@ import fonts from "lib/fonts";
 import appSettings from "lib/settings";
 
 export default function terminalSettings() {
-	const title = "Terminal Settings";
+	const title = strings["terminal settings"];
 	const values = appSettings.value;
 
 	// Initialize terminal settings with defaults if not present
@@ -24,9 +24,9 @@ export default function terminalSettings() {
 	const items = [
 		{
 			key: "fontSize",
-			text: "Font Size",
+			text: strings["font size"],
 			value: terminalValues.fontSize,
-			prompt: "Font Size",
+			prompt: strings["font size"],
 			promptType: "number",
 			promptOptions: {
 				test(value) {
@@ -34,19 +34,22 @@ export default function terminalSettings() {
 					return value >= 8 && value <= 32;
 				},
 			},
+			info: "The font size used to render text.",
 		},
 		{
 			key: "fontFamily",
-			text: "Font Family",
+			text: strings["terminal:font family"],
 			value: terminalValues.fontFamily,
 			get select() {
 				return fonts.getNames();
 			},
+			info: "The font family used to render text.",
 		},
 		{
 			key: "theme",
-			text: "Theme",
+			text: strings["theme"],
 			value: terminalValues.theme,
+			info: "The color theme of the terminal.",
 			get select() {
 				return TerminalThemeManager.getThemeNames().map((name) => [
 					name,
@@ -60,19 +63,21 @@ export default function terminalSettings() {
 		},
 		{
 			key: "cursorStyle",
-			text: "Cursor Style",
+			text: strings["terminal:cursor style"],
 			value: terminalValues.cursorStyle,
 			select: ["block", "underline", "bar"],
+			info: "The style of the cursor when the terminal is focused.",
 		},
 		{
 			key: "cursorInactiveStyle",
-			text: "Cursor Inactive Style",
+			text: strings["terminal:cursor inactive style"],
 			value: terminalValues.cursorInactiveStyle,
 			select: ["outline", "block", "bar", "underline", "none"],
+			info: "The style of the cursor when the terminal is not focused.",
 		},
 		{
 			key: "fontWeight",
-			text: "Font Weight",
+			text: strings["terminal:font weight"],
 			value: terminalValues.fontWeight,
 			select: [
 				"normal",
@@ -87,17 +92,19 @@ export default function terminalSettings() {
 				"800",
 				"900",
 			],
+			info: "The font weight used to render non-bold text.",
 		},
 		{
 			key: "cursorBlink",
-			text: "Cursor Blink",
+			text: strings["terminal:cursor blink"],
 			checkbox: terminalValues.cursorBlink,
+			info: "Whether the cursor blinks.",
 		},
 		{
 			key: "scrollback",
-			text: "Scrollback Lines",
+			text: strings["terminal:scrollback"],
 			value: terminalValues.scrollback,
-			prompt: "Scrollback Lines",
+			prompt: strings["terminal:scrollback"],
 			promptType: "number",
 			promptOptions: {
 				test(value) {
@@ -105,12 +112,13 @@ export default function terminalSettings() {
 					return value >= 100 && value <= 10000;
 				},
 			},
+			info: "The amount of scrollback in the terminal. Scrollback is the amount of rows that are retained when lines are scrolled beyond the initial viewport.",
 		},
 		{
 			key: "tabStopWidth",
-			text: "Tab Stop Width",
+			text: strings["terminal:tab stop width"],
 			value: terminalValues.tabStopWidth,
-			prompt: "Tab Stop Width",
+			prompt: strings["terminal:tab stop width"],
 			promptType: "number",
 			promptOptions: {
 				test(value) {
@@ -118,28 +126,32 @@ export default function terminalSettings() {
 					return value >= 1 && value <= 8;
 				},
 			},
+			info: "The size of tab stops in the terminal.",
 		},
 		{
 			key: "letterSpacing",
-			text: "Letter Spacing",
+			text: strings["letter spacing"],
 			value: terminalValues.letterSpacing,
-			prompt: "Letter Spacing",
+			prompt: strings["letter spacing"],
 			promptType: "number",
+			info: "The spacing in whole pixels between characters.",
 		},
 		{
 			key: "convertEol",
-			text: "Convert EOL",
+			text: strings["terminal:convert eol"],
 			checkbox: terminalValues.convertEol,
 		},
 		{
 			key: "imageSupport",
-			text: "Image Support",
+			text: `${strings["image"]} Support`,
 			checkbox: terminalValues.imageSupport,
+			info: "Whether images are supported in the terminal.",
 		},
 		{
 			key: "fontLigatures",
-			text: "Font Ligatures",
+			text: strings["font ligatures"],
 			checkbox: terminalValues.fontLigatures,
+			info: "Whether font ligatures are enabled in the terminal.",
 		},
 	];
 
