@@ -590,4 +590,10 @@ export default {
 		description: "Reset font size",
 		key: "Ctrl+0|Ctrl-Numpad0",
 	},
+	openTerminal: {
+		description: "Open Terminal",
+		key: "Ctrl-`",
+		readOnly: true,
+		action: "new-terminal",
+	},
 };
