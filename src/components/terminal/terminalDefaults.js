@@ -14,6 +14,12 @@ export const DEFAULT_TERMINAL_SETTINGS = {
 	letterSpacing: 0,
 	imageSupport: false,
 	fontLigatures: false,
+	// Touch selection settings
+	touchSelectionTapHoldDuration: 600,
+	touchSelectionMoveThreshold: 8,
+	touchSelectionHandleSize: 24,
+	touchSelectionHapticFeedback: true,
+	touchSelectionShowContextMenu: true,
 };
 
 export function getTerminalSettings() {

@@ -262,11 +262,53 @@ class TerminalManager {
 			this.closeTerminal(terminalId);
 		};
 
-		// Handle window resize
-		const resizeObserver = new ResizeObserver(() => {
-			setTimeout(() => {
-				terminalComponent.fit();
-			}, 100);
+		// Enhanced resize handling with debouncing
+		let resizeTimeout = null;
+		const RESIZE_DEBOUNCE = 200;
+		let lastResizeTime = 0;
+
+		const resizeObserver = new ResizeObserver((entries) => {
+			const now = Date.now();
+
+			// Clear any pending resize
+			if (resizeTimeout) {
+				clearTimeout(resizeTimeout);
+			}
+
+			// Debounce rapid resize events (common during keyboard open/close)
+			resizeTimeout = setTimeout(() => {
+				try {
+					// Check if terminal is still available and mounted
+					if (!terminalComponent.terminal || !terminalComponent.container) {
+						return;
+					}
+
+					// Get current terminal state
+					const currentRows = terminalComponent.terminal.rows;
+					const currentCols = terminalComponent.terminal.cols;
+
+					// Fit the terminal to new container size
+					terminalComponent.fit();
+
+					// Check if dimensions actually changed after fit
+					const newRows = terminalComponent.terminal.rows;
+					const newCols = terminalComponent.terminal.cols;
+
+					if (
+						Math.abs(newRows - currentRows) > 1 ||
+						Math.abs(newCols - currentCols) > 1
+					) {
+						// console.log(
+						// 	`Terminal ${terminalId} resized: ${currentRows}x${currentCols} -> ${newRows}x${newCols}`,
+						// );
+					}
+
+					// Update last resize time
+					lastResizeTime = now;
+				} catch (error) {
+					console.error(`Resize error for terminal ${terminalId}:`, error);
+				}
+			}, RESIZE_DEBOUNCE);
 		});
 
 		// Wait for the terminal container to be available, then observe it
@@ -413,6 +455,78 @@ class TerminalManager {
 		return this.createTerminal({
 			...options,
 			serverMode: true,
+		});
+	}
+
+	/**
+	 * Handle keyboard resize events for all terminals
+	 * This is called when the virtual keyboard opens/closes on mobile
+	 */
+	handleKeyboardResize() {
+		// Add a small delay to let the UI settle
+		setTimeout(() => {
+			this.terminals.forEach((terminal) => {
+				try {
+					if (terminal.component && terminal.component.terminal) {
+						// Force a re-fit for all terminals
+						terminal.component.fit();
+
+						// If terminal has lots of content, try to preserve scroll position
+						const buffer = terminal.component.terminal.buffer?.active;
+						if (
+							buffer &&
+							buffer.length > terminal.component.terminal.rows * 2
+						) {
+							// For content-heavy terminals, ensure we stay near the bottom if we were there
+							const wasNearBottom =
+								buffer.viewportY >=
+								buffer.length - terminal.component.terminal.rows - 5;
+							if (wasNearBottom) {
+								// Scroll to bottom after resize
+								setTimeout(() => {
+									terminal.component.terminal.scrollToBottom();
+								}, 100);
+							}
+						}
+					}
+				} catch (error) {
+					console.error(
+						`Error handling keyboard resize for terminal ${terminal.id}:`,
+						error,
+					);
+				}
+			});
+		}, 150);
+	}
+
+	/**
+	 * Stabilize terminal viewport after resize operations
+	 */
+	stabilizeTerminals() {
+		this.terminals.forEach((terminal) => {
+			try {
+				if (terminal.component && terminal.component.terminal) {
+					// Clear any touch selections during stabilization
+					if (
+						terminal.component.touchSelection &&
+						terminal.component.touchSelection.isSelecting
+					) {
+						terminal.component.touchSelection.clearSelection();
+					}
+
+					// Re-fit and refresh
+					terminal.component.fit();
+
+					// Focus the active terminal to ensure proper state
+					if (terminal.file && terminal.file.isOpen) {
+						setTimeout(() => {
+							terminal.component.focus();
+						}, 50);
+					}
+				}
+			} catch (error) {
+				console.error(`Error stabilizing terminal ${terminal.id}:`, error);
+			}
 		});
 	}
 }

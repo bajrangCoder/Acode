@@ -17,6 +17,7 @@ import appSettings from "lib/settings";
 import LigaturesAddon from "./ligatures";
 import { getTerminalSettings } from "./terminalDefaults";
 import TerminalThemeManager from "./terminalThemeManager";
+import TerminalTouchSelection from "./terminalTouchSelection";
 
 export default class TerminalComponent {
 	constructor(options = {}) {
@@ -55,6 +56,7 @@ export default class TerminalComponent {
 		this.pid = null;
 		this.isConnected = false;
 		this.serverMode = options.serverMode !== false; // Default true
+		this.touchSelection = null;
 
 		this.init();
 	}
@@ -99,12 +101,8 @@ export default class TerminalComponent {
 	}
 
 	setupEventHandlers() {
-		// Handle terminal resize
-		this.terminal.onResize((size) => {
-			if (this.serverMode) {
-				this.resizeTerminal(size.cols, size.rows);
-			}
-		});
+		// terminal resize handling
+		this.setupResizeHandling();
 
 		// Handle terminal title changes
 		this.terminal.onTitleChange((title) => {
@@ -118,6 +116,157 @@ export default class TerminalComponent {
 
 		// Handle copy/paste keybindings
 		this.setupCopyPasteHandlers();
+	}
+
+	/**
+	 * Setup resize handling for keyboard events and content preservation
+	 */
+	setupResizeHandling() {
+		let resizeTimeout = null;
+		let lastKnownScrollPosition = 0;
+		let isResizing = false;
+		let resizeCount = 0;
+		const RESIZE_DEBOUNCE = 150;
+		const MAX_RAPID_RESIZES = 3;
+
+		// Store original dimensions for comparison
+		let originalRows = this.terminal.rows;
+		let originalCols = this.terminal.cols;
+
+		this.terminal.onResize((size) => {
+			// Track resize events
+			resizeCount++;
+			isResizing = true;
+
+			// Store current scroll position before resize
+			if (this.terminal.buffer && this.terminal.buffer.active) {
+				lastKnownScrollPosition = this.terminal.buffer.active.viewportY;
+			}
+
+			// Clear any existing timeout
+			if (resizeTimeout) {
+				clearTimeout(resizeTimeout);
+			}
+
+			// Debounced resize handling
+			resizeTimeout = setTimeout(async () => {
+				try {
+					// Only proceed with server resize if dimensions actually changed significantly
+					const rowDiff = Math.abs(size.rows - originalRows);
+					const colDiff = Math.abs(size.cols - originalCols);
+
+					// If this is a minor resize (likely intermediate state), skip server update
+					if (rowDiff < 2 && colDiff < 2 && resizeCount > 1) {
+						console.log("Skipping minor resize to prevent instability");
+						isResizing = false;
+						resizeCount = 0;
+						return;
+					}
+
+					// Handle server resize
+					if (this.serverMode) {
+						await this.resizeTerminal(size.cols, size.rows);
+					}
+
+					// Preserve scroll position for content-heavy terminals
+					this.preserveViewportPosition(lastKnownScrollPosition);
+
+					// Update stored dimensions
+					originalRows = size.rows;
+					originalCols = size.cols;
+
+					// Mark resize as complete
+					isResizing = false;
+					resizeCount = 0;
+
+					// Notify touch selection if it exists
+					if (this.touchSelection) {
+						this.touchSelection.onTerminalResize(size);
+					}
+				} catch (error) {
+					console.error("Resize handling failed:", error);
+					isResizing = false;
+					resizeCount = 0;
+				}
+			}, RESIZE_DEBOUNCE);
+		});
+
+		// Also handle viewport changes for scroll position preservation
+		this.terminal.onData(() => {
+			// If we're not resizing and user types, everything is stable
+			if (!isResizing && this.terminal.buffer && this.terminal.buffer.active) {
+				lastKnownScrollPosition = this.terminal.buffer.active.viewportY;
+			}
+		});
+	}
+
+	/**
+	 * Preserve viewport position during resize to prevent jumping
+	 */
+	preserveViewportPosition(targetScrollPosition) {
+		if (!this.terminal.buffer || !this.terminal.buffer.active) return;
+
+		const buffer = this.terminal.buffer.active;
+		const maxScroll = Math.max(0, buffer.length - this.terminal.rows);
+
+		// Ensure scroll position is within valid bounds
+		const safeScrollPosition = Math.min(targetScrollPosition, maxScroll);
+
+		// Only adjust if we have significant content and the position is different
+		if (
+			buffer.length > this.terminal.rows &&
+			Math.abs(buffer.viewportY - safeScrollPosition) > 2
+		) {
+			// Gradually adjust to prevent jarring movements
+			const steps = 3;
+			const diff = safeScrollPosition - buffer.viewportY;
+			const stepSize = Math.ceil(Math.abs(diff) / steps);
+
+			let currentStep = 0;
+			const adjustStep = () => {
+				if (currentStep >= steps) return;
+
+				const currentPos = buffer.viewportY;
+				const remaining = safeScrollPosition - currentPos;
+				const adjustment =
+					Math.sign(remaining) * Math.min(stepSize, Math.abs(remaining));
+
+				if (Math.abs(adjustment) >= 1) {
+					this.terminal.scrollLines(adjustment);
+				}
+
+				currentStep++;
+				if (currentStep < steps && Math.abs(remaining) > 1) {
+					setTimeout(adjustStep, 50);
+				}
+			};
+
+			setTimeout(adjustStep, 100);
+		}
+	}
+
+	/**
+	 * Setup touch selection for mobile devices
+	 */
+	setupTouchSelection() {
+		// Only initialize touch selection on mobile devices
+		if (window.cordova && this.container) {
+			const terminalSettings = getTerminalSettings();
+			this.touchSelection = new TerminalTouchSelection(
+				this.terminal,
+				this.container,
+				{
+					tapHoldDuration:
+						terminalSettings.touchSelectionTapHoldDuration || 600,
+					moveThreshold: terminalSettings.touchSelectionMoveThreshold || 8,
+					handleSize: terminalSettings.touchSelectionHandleSize || 24,
+					hapticFeedback:
+						terminalSettings.touchSelectionHapticFeedback !== false,
+					showContextMenu:
+						terminalSettings.touchSelectionShowContextMenu !== false,
+				},
+			);
+		}
 	}
 
 	/**
@@ -250,6 +399,9 @@ export default class TerminalComponent {
 			setTimeout(() => {
 				this.fitAddon.fit();
 				this.terminal.focus();
+
+				// Initialize touch selection after terminal is mounted
+				this.setupTouchSelection();
 			}, 10);
 		} catch (error) {
 			console.error("Failed to mount terminal:", error);
@@ -612,6 +764,12 @@ export default class TerminalComponent {
 	 */
 	dispose() {
 		this.terminate();
+
+		// Dispose touch selection
+		if (this.touchSelection) {
+			this.touchSelection.destroy();
+			this.touchSelection = null;
+		}
 
 		// Dispose addons
 		this.disposeImageAddon();
