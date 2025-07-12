@@ -31,6 +31,14 @@ export default class TerminalTouchSelection {
 		this.tapHoldTimeout = null;
 		this.dragHandle = null;
 
+		// Zoom tracking
+		this.pinchStartDistance = 0;
+		this.lastPinchDistance = 0;
+		this.isPinching = false;
+		this.initialFontSize = 0;
+		this.lastZoomTime = 0;
+		this.zoomThrottle = 50; // ms
+
 		// DOM elements
 		this.selectionOverlay = null;
 		this.startHandle = null;
@@ -208,7 +216,14 @@ export default class TerminalTouchSelection {
 	}
 
 	onTerminalTouchStart(event) {
-		// Only handle single touch
+		// Handle pinch zoom
+		if (event.touches.length === 2) {
+			event.preventDefault();
+			this.startPinchZoom(event);
+			return;
+		}
+
+		// Only handle single touch for selection
 		if (event.touches.length !== 1) return;
 
 		const touch = event.touches[0];
@@ -228,14 +243,24 @@ export default class TerminalTouchSelection {
 
 		// Start tap-hold timer
 		this.tapHoldTimeout = setTimeout(() => {
-			if (!this.isSelecting) {
+			if (!this.isSelecting && !this.isPinching) {
 				this.startSelection(touch);
 			}
 		}, this.options.tapHoldDuration);
 	}
 
 	onTerminalTouchMove(event) {
+		// Handle pinch zoom
+		if (event.touches.length === 2) {
+			event.preventDefault();
+			this.handlePinchZoom(event);
+			return;
+		}
+
 		if (event.touches.length !== 1) return;
+
+		// Don't handle single touch if we're pinching
+		if (this.isPinching) return;
 
 		const touch = event.touches[0];
 		const deltaX = Math.abs(touch.clientX - this.touchStartPos.x);
@@ -260,6 +285,12 @@ export default class TerminalTouchSelection {
 	}
 
 	onTerminalTouchEnd(event) {
+		// Handle end of pinch zoom
+		if (this.isPinching) {
+			this.endPinchZoom();
+			return;
+		}
+
 		if (this.tapHoldTimeout) {
 			clearTimeout(this.tapHoldTimeout);
 			this.tapHoldTimeout = null;
@@ -914,6 +945,77 @@ export default class TerminalTouchSelection {
 		} catch (error) {
 			return false;
 		}
+	}
+
+	/**
+	 * Start pinch zoom gesture
+	 */
+	startPinchZoom(event) {
+		if (event.touches.length !== 2) return;
+
+		this.isPinching = true;
+		this.initialFontSize = this.terminal.options.fontSize;
+
+		const touch1 = event.touches[0];
+		const touch2 = event.touches[1];
+
+		this.pinchStartDistance = this.getDistance(touch1, touch2);
+		this.lastPinchDistance = this.pinchStartDistance;
+
+		// Clear any selection timeouts
+		if (this.tapHoldTimeout) {
+			clearTimeout(this.tapHoldTimeout);
+			this.tapHoldTimeout = null;
+		}
+	}
+
+	/**
+	 * Handle pinch zoom gesture
+	 */
+	handlePinchZoom(event) {
+		if (!this.isPinching || event.touches.length !== 2) return;
+
+		const now = Date.now();
+		if (now - this.lastZoomTime < this.zoomThrottle) return;
+		this.lastZoomTime = now;
+
+		const touch1 = event.touches[0];
+		const touch2 = event.touches[1];
+		const currentDistance = this.getDistance(touch1, touch2);
+
+		const scale = currentDistance / this.pinchStartDistance;
+		const newFontSize = Math.round(this.initialFontSize * scale);
+
+		// Clamp font size between reasonable limits
+		const minFontSize = 8;
+		const maxFontSize = 24;
+		const clampedFontSize = Math.max(
+			minFontSize,
+			Math.min(maxFontSize, newFontSize),
+		);
+
+		if (clampedFontSize !== this.terminal.options.fontSize) {
+			this.options.onFontSizeChange(clampedFontSize);
+		}
+	}
+
+	/**
+	 * End pinch zoom gesture
+	 */
+	endPinchZoom() {
+		this.isPinching = false;
+		this.pinchStartDistance = 0;
+		this.lastPinchDistance = 0;
+		this.initialFontSize = 0;
+	}
+
+	/**
+	 * Get distance between two touch points
+	 */
+	getDistance(touch1, touch2) {
+		const dx = touch2.clientX - touch1.clientX;
+		const dy = touch2.clientY - touch1.clientY;
+		return Math.sqrt(dx * dx + dy * dy);
 	}
 
 	destroy() {

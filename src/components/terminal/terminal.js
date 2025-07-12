@@ -265,6 +265,7 @@ export default class TerminalComponent {
 						terminalSettings.touchSelectionHapticFeedback !== false,
 					showContextMenu:
 						terminalSettings.touchSelectionShowContextMenu !== false,
+					onFontSizeChange: (fontSize) => this.updateFontSize(fontSize),
 				},
 			);
 		}
@@ -337,6 +338,20 @@ export default class TerminalComponent {
 			if (event.ctrlKey && event.shiftKey && event.key === "V") {
 				event.preventDefault();
 				this.pasteFromClipboard();
+				return false;
+			}
+
+			// Check for Ctrl+= or Ctrl++ (increase font size)
+			if (event.ctrlKey && (event.key === "+" || event.key === "=")) {
+				event.preventDefault();
+				this.increaseFontSize();
+				return false;
+			}
+
+			// Check for Ctrl+- (decrease font size)
+			if (event.ctrlKey && event.key === "-") {
+				event.preventDefault();
+				this.decreaseFontSize();
 				return false;
 			}
 
@@ -800,6 +815,56 @@ export default class TerminalComponent {
 			} catch (error) {
 				console.warn(`Failed to load terminal font ${fontFamily}:`, error);
 			}
+		}
+	}
+
+	/**
+	 * Increase terminal font size
+	 */
+	increaseFontSize() {
+		const currentSize = this.terminal.options.fontSize;
+		const newSize = Math.min(currentSize + 1, 24); // Max font size 24
+		this.updateFontSize(newSize);
+	}
+
+	/**
+	 * Decrease terminal font size
+	 */
+	decreaseFontSize() {
+		const currentSize = this.terminal.options.fontSize;
+		const newSize = Math.max(currentSize - 1, 8); // Min font size 8
+		this.updateFontSize(newSize);
+	}
+
+	/**
+	 * Update terminal font size and refresh display
+	 */
+	updateFontSize(fontSize) {
+		if (fontSize === this.terminal.options.fontSize) return;
+
+		this.terminal.options.fontSize = fontSize;
+		this.options.fontSize = fontSize;
+
+		// Update terminal settings properly
+		const currentSettings = appSettings.value.terminalSettings || {};
+		const updatedSettings = { ...currentSettings, fontSize };
+		appSettings.update({ terminalSettings: updatedSettings }, false);
+
+		// Refresh terminal display
+		this.terminal.refresh(0, this.terminal.rows - 1);
+
+		// Fit terminal to container after font size change to prevent empty space
+		setTimeout(() => {
+			if (this.fitAddon) {
+				this.fitAddon.fit();
+			}
+		}, 50);
+
+		// Update touch selection cell dimensions if it exists
+		if (this.touchSelection) {
+			setTimeout(() => {
+				this.touchSelection.updateCellDimensions();
+			}, 100);
 		}
 	}
 
