@@ -246,71 +246,124 @@ const Terminal = {
             }, reject);
         });
     },
-
-    backup(){
+    /**
+     * Creates a backup of the Alpine Linux installation
+     * @async
+     * @function backup
+     * @description Creates a compressed tar archive of the Alpine installation
+     * @returns {Promise<string>} Promise that resolves to the file URI of the created backup file (aterm_backup.tar)
+     * @throws {string} Rejects with "Alpine is not installed." if Alpine is not currently installed
+     * @throws {string} Rejects with command output if backup creation fails
+     * @example
+     * try {
+     *   const backupPath = await backup();
+     *   console.log(`Backup created at: ${backupPath}`);
+     * } catch (error) {
+     *   console.error(`Backup failed: ${error}`);
+     * }
+     */
+    backup() {
         return new Promise(async (resolve, reject) => {
-            if(!await this.isInstalled()){
-                reject("Alpine is not installed.")
-                return
+            if (!await this.isInstalled()) {
+                reject("Alpine is not installed.");
+                return;
             }
+    
             const cmd = `
             set -e
-
-            INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
-
+    
+            INCLUDE_FILES="alpine .downloaded .extracted axs"
             if [ "$FDROID" = "true" ]; then
-                INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
+                INCLUDE_FILES="$INCLUDE_FILES libtalloc.so.2 libproot-xed.so"
             fi
-
-
-            tar -cf $PREFIX/aterm_backup.tar $INCLUDE_FILES
+    
+            EXCLUDE="--exclude=alpine/data --exclude=alpine/system --exclude=alpine/vendor --exclude=alpine/sdcard --exclude=alpine/storage"
+    
+            tar -cf "$PREFIX/aterm_backup.tar" -C "$PREFIX" $EXCLUDE $INCLUDE_FILES
             echo "ok"
-            `
-           const result = await Executor.execute(cmd)
-           if(result === "ok"){
-            resolve(cordova.file.dataDirectory + "aterm_backup.tar")
-           }else{
-            reject(result)
-           }
+            `;
+    
+            const result = await Executor.execute(cmd);
+            if (result === "ok") {
+                resolve(cordova.file.dataDirectory + "aterm_backup.tar");
+            } else {
+                reject(result);
+            }
         });
     },
-    restore(){
+    /**
+     * Restores Alpine Linux installation from a backup file
+     * @async
+     * @function restore
+     * @description Restores the Alpine installation from a previously created backup file (aterm_backup.tar).
+     * This function stops any running Alpine processes, removes existing installation files, and extracts
+     * the backup to restore the previous state. The backup file must exist in the expected location.
+     * @returns {Promise<string>} Promise that resolves to "ok" when restoration completes successfully
+     * @throws {string} Rejects with "Backup File does not exist" if aterm_backup.tar is not found
+     * @throws {string} Rejects with command output if restoration fails
+     * @example
+     * try {
+     *   await restore();
+     *   console.log("Alpine installation restored successfully");
+     * } catch (error) {
+     *   console.error(`Restore failed: ${error}`);
+     * }
+     */
+    restore() {
         return new Promise(async (resolve, reject) => {
-            if(await this.isAxsRunning()){
-                await this.stopAxs()
+            if (await this.isAxsRunning()) {
+                await this.stopAxs();
             }
+    
             const cmd = `
             set -e
-
+    
             if [ -f "$PREFIX/aterm_backup.tar" ]; then
-
+                :  # do nothing
             else
                 echo "Backup File does not exist"
+                exit 1
             fi
-
-
+    
             INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
-
+    
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
             fi
-
+    
             for item in $INCLUDE_FILES; do
                 rm -rf -- "$item"
             done
-
-
-            tar -xf $PREFIX/aterm_backup.tar -C $PREFIX
+    
+            tar -xf "$PREFIX/aterm_backup.tar" -C "$PREFIX"
             echo "ok"
-            `
-           const result = await Executor.execute(cmd)
-           if(result === "ok"){
-            resolve(result)
-           }else{
-            reject(result)
-           }
+            `;
+    
+            const result = await Executor.execute(cmd);
+            if (result === "ok") {
+                resolve(result);
+            } else {
+                reject(result);
+            }
         });
     },
+    /**
+     * Uninstalls the Alpine Linux installation
+     * @async
+     * @function uninstall
+     * @description Completely removes the Alpine Linux installation from the device by deleting all
+     * Alpine-related files and directories. This function stops any running Alpine processes before
+     * removal. NOTE: This does not perform cleanup of $PREFIX
+     * @returns {Promise<string>} Promise that resolves to "ok" when uninstallation completes successfully
+     * @throws {string} Rejects with command output if uninstallation fails
+     * @example
+     * try {
+     *   await uninstall();
+     *   console.log("Alpine installation removed successfully");
+     * } catch (error) {
+     *   console.error(`Uninstall failed: ${error}`);
+     * }
+     */
     uninstall(){
         return new Promise(async (resolve, reject) => {
             if(await this.isAxsRunning()){
