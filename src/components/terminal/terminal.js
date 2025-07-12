@@ -13,6 +13,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as Xterm } from "@xterm/xterm";
 import confirm from "dialogs/confirm";
 import fonts from "lib/fonts";
+import keyBindings from "lib/keyBindings";
 import appSettings from "lib/settings";
 import LigaturesAddon from "./ligatures";
 import { getTerminalSettings } from "./terminalDefaults";
@@ -270,6 +271,56 @@ export default class TerminalComponent {
 	}
 
 	/**
+	 * Parse app keybindings into a format usable by the keyboard handler
+	 */
+	parseAppKeybindings() {
+		const parsedBindings = [];
+
+		Object.values(keyBindings).forEach((binding) => {
+			if (!binding.key) return;
+
+			// Skip editor-only keybindings in terminal
+			if (binding.editorOnly) return;
+
+			// Handle multiple key combinations separated by |
+			const keys = binding.key.split("|");
+
+			keys.forEach((keyCombo) => {
+				const parts = keyCombo.split("-");
+				const parsed = {
+					ctrl: false,
+					shift: false,
+					alt: false,
+					meta: false,
+					key: "",
+				};
+
+				parts.forEach((part) => {
+					const lowerPart = part.toLowerCase();
+					if (lowerPart === "ctrl") {
+						parsed.ctrl = true;
+					} else if (lowerPart === "shift") {
+						parsed.shift = true;
+					} else if (lowerPart === "alt") {
+						parsed.alt = true;
+					} else if (lowerPart === "meta" || lowerPart === "cmd") {
+						parsed.meta = true;
+					} else {
+						// This is the actual key
+						parsed.key = part;
+					}
+				});
+
+				if (parsed.key) {
+					parsedBindings.push(parsed);
+				}
+			});
+		});
+
+		return parsedBindings;
+	}
+
+	/**
 	 * Setup copy/paste keyboard handlers
 	 */
 	setupCopyPasteHandlers() {
@@ -289,34 +340,46 @@ export default class TerminalComponent {
 				return false;
 			}
 
-			// Check for Ctrl+C (terminate)
-			if (event.ctrlKey && event.key === "C") {
-				event.preventDefault();
-				this.websocket?.send("\x03");
-				return false;
-			}
-
-			// For app-wide keybindings, dispatch them to the app's keyboard handler
+			// Only intercept specific app-wide keybindings, let terminal handle the rest
 			if (event.ctrlKey || event.altKey || event.metaKey) {
 				// Skip modifier-only keys
 				if (["Control", "Alt", "Meta", "Shift"].includes(event.key)) {
 					return true;
 				}
-				const appEvent = new KeyboardEvent("keydown", {
-					key: event.key,
-					ctrlKey: event.ctrlKey,
-					shiftKey: event.shiftKey,
-					altKey: event.altKey,
-					metaKey: event.metaKey,
-					bubbles: true,
-					cancelable: true,
-				});
 
-				// Dispatch to document so it gets picked up by the app's keyboard handler
-				document.dispatchEvent(appEvent);
+				// Get parsed app keybindings
+				const appKeybindings = this.parseAppKeybindings();
 
-				// Return false to prevent terminal from processing this key
-				return false;
+				// Check if this is an app-specific keybinding
+				const isAppKeybinding = appKeybindings.some(
+					(binding) =>
+						binding.ctrl === event.ctrlKey &&
+						binding.shift === event.shiftKey &&
+						binding.alt === event.altKey &&
+						binding.meta === event.metaKey &&
+						binding.key === event.key,
+				);
+
+				if (isAppKeybinding) {
+					const appEvent = new KeyboardEvent("keydown", {
+						key: event.key,
+						ctrlKey: event.ctrlKey,
+						shiftKey: event.shiftKey,
+						altKey: event.altKey,
+						metaKey: event.metaKey,
+						bubbles: true,
+						cancelable: true,
+					});
+
+					// Dispatch to document so it gets picked up by the app's keyboard handler
+					document.dispatchEvent(appEvent);
+
+					// Return false to prevent terminal from processing this key
+					return false;
+				}
+
+				// For all other modifier combinations, let the terminal handle them
+				return true;
 			}
 
 			// Return true to allow normal processing for other keys
