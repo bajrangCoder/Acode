@@ -3,8 +3,13 @@ import {
 	DEFAULT_TERMINAL_SETTINGS,
 	TerminalThemeManager,
 } from "components/terminal";
+import toast from "components/toast";
+import alert from "dialogs/alert";
+import fsOperation from "fileSystem";
 import fonts from "lib/fonts";
 import appSettings from "lib/settings";
+import FileBrowser from "pages/fileBrowser";
+import Url from "utils/Url";
 
 export default function terminalSettings() {
 	const title = strings["terminal settings"];
@@ -153,6 +158,16 @@ export default function terminalSettings() {
 			checkbox: terminalValues.fontLigatures,
 			info: "Whether font ligatures are enabled in the terminal.",
 		},
+		{
+			key: "backup",
+			text: strings.backup.capitalize(),
+			info: "Creates a backup of the terminal installation",
+		},
+		{
+			key: "restore",
+			text: strings.restore.capitalize(),
+			info: "Restores a backup of the terminal installation",
+		},
 	];
 
 	return settingsPage(title, items, callback);
@@ -163,15 +178,87 @@ export default function terminalSettings() {
 	 * @param {string} value
 	 */
 	function callback(key, value) {
-		appSettings.update({
-			terminalSettings: {
-				...values.terminalSettings,
-				[key]: value,
-			},
-		});
+		switch (key) {
+			case "backup":
+				terminalBackup();
+				return;
 
-		// Update any active terminal instances
-		updateActiveTerminals(key, value);
+			case "restore":
+				terminalRestore();
+				return;
+
+			default:
+				appSettings.update({
+					terminalSettings: {
+						...values.terminalSettings,
+						[key]: value,
+					},
+				});
+
+				// Update any active terminal instances
+				updateActiveTerminals(key, value);
+				break;
+		}
+	}
+
+	/**
+	 * Creates a backup of the terminal installation
+	 */
+	async function terminalBackup() {
+		try {
+			// Ask user to select backup location
+			const { url } = await FileBrowser("folder", strings["select folder"]);
+
+			// Create backup
+			const backupPath = await Terminal.backup();
+			const backupFilename = "aterm_backup.tar";
+			const destinationPath = Url.join(url, backupFilename);
+			const sourceFS = fsOperation(backupPath);
+
+			const res = await sourceFS.moveTo(destinationPath);
+
+			alert(
+				strings.success.toUpperCase(),
+				`${strings["backup successful"]}\n${res}.`,
+			);
+		} catch (error) {
+			console.error("Terminal backup failed:", error);
+			toast(error.toString());
+		}
+	}
+
+	/**
+	 * Restores terminal installation
+	 */
+	async function terminalRestore() {
+		try {
+			sdcard.openDocumentFile(
+				async (data) => {
+					const backupFilename = "aterm_backup.tar";
+					const tempBackupPath = cordova.file.dataDirectory + backupFilename;
+					const sourceFS = fsOperation(data.uri);
+					const tempFS = fsOperation(tempBackupPath);
+
+					await sourceFS.copyTo(tempBackupPath);
+
+					// Restore
+					await Terminal.restore();
+
+					// Clean up
+					await tempFS.delete();
+
+					alert(
+						strings.success.toUpperCase(),
+						"Terminal restored successfully",
+					);
+				},
+				toast,
+				"application/octet-stream",
+			);
+		} catch (error) {
+			console.error("Terminal restore failed:", error);
+			toast(error.toString());
+		}
 	}
 }
 
