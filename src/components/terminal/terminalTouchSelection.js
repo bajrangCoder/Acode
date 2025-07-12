@@ -310,6 +310,10 @@ export default class TerminalTouchSelection {
 		this.isHandleDragging = true;
 		this.dragHandle = handleType;
 
+		// Store the initial touch position for delta calculations
+		const touch = event.touches[0];
+		this.initialTouchPos = { x: touch.clientX, y: touch.clientY };
+
 		// Update handle appearance - ensure we're updating the correct handle
 		const targetHandle =
 			handleType === "start" ? this.startHandle : this.endHandle;
@@ -326,6 +330,19 @@ export default class TerminalTouchSelection {
 		event.stopPropagation();
 
 		const touch = event.touches[0];
+
+		// Check if there's significant movement before updating selection
+		const deltaX = Math.abs(touch.clientX - this.initialTouchPos.x);
+		const deltaY = Math.abs(touch.clientY - this.initialTouchPos.y);
+
+		// Only update selection if there's significant movement (prevents micro-movements)
+		if (
+			deltaX < this.options.moveThreshold &&
+			deltaY < this.options.moveThreshold
+		) {
+			return;
+		}
+
 		const coords = this.touchToTerminalCoords(touch);
 
 		if (coords) {
