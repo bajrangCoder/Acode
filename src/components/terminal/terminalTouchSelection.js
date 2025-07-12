@@ -13,6 +13,7 @@ export default class TerminalTouchSelection {
 			handleSize: 24,
 			hapticFeedback: true,
 			showContextMenu: true,
+			fingerOffset: 40, // Offset in pixels to position selection above finger during drag
 			...options,
 		};
 
@@ -343,7 +344,13 @@ export default class TerminalTouchSelection {
 			return;
 		}
 
-		const coords = this.touchToTerminalCoords(touch);
+		// Apply finger offset for better visibility during drag
+		const adjustedTouch = {
+			clientX: touch.clientX,
+			clientY: touch.clientY - this.options.fingerOffset,
+		};
+
+		const coords = this.touchToTerminalCoords(adjustedTouch);
 
 		if (coords) {
 			// Allow handle swapping but manage it properly
