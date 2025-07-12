@@ -540,14 +540,24 @@ export default class TerminalTouchSelection {
 		this.wasFocusedBeforeSelection = this.isTerminalFocused();
 
 		this.isSelecting = true;
-		this.selectionStart = coords;
-		this.selectionEnd = coords;
+
+		// Try to auto-select word at touch position
+		const wordBounds = this.getWordBoundsAt(coords);
+		if (wordBounds) {
+			// Select the entire word
+			this.selectionStart = wordBounds.start;
+			this.selectionEnd = wordBounds.end;
+		} else {
+			// Fallback to single character selection
+			this.selectionStart = coords;
+			this.selectionEnd = coords;
+		}
 
 		// Clear any existing selection
 		this.terminal.clearSelection();
 
-		// Start with single character selection
-		this.terminal.select(coords.col, coords.row, 1);
+		// Apply the selection
+		this.updateSelection();
 
 		// Store current selection for immediate access
 		this.currentSelection = this.terminal.getSelection();
@@ -945,6 +955,60 @@ export default class TerminalTouchSelection {
 		} catch (error) {
 			return false;
 		}
+	}
+
+	/**
+	 * Get word boundaries at the given coordinates
+	 */
+	getWordBoundsAt(coords) {
+		try {
+			const buffer = this.terminal.buffer.active;
+			const line = buffer.getLine(coords.row);
+			if (!line) return null;
+
+			const lineText = line.translateToString(false);
+			if (!lineText || coords.col >= lineText.length) return null;
+
+			const char = lineText[coords.col];
+			if (!this.isWordCharacter(char)) return null;
+
+			// Find word start
+			let startCol = coords.col;
+			while (startCol > 0 && this.isWordCharacter(lineText[startCol - 1])) {
+				startCol--;
+			}
+
+			// Find word end
+			let endCol = coords.col;
+			while (
+				endCol < lineText.length - 1 &&
+				this.isWordCharacter(lineText[endCol + 1])
+			) {
+				endCol++;
+			}
+
+			// Only auto-select if we found a meaningful word (more than just one character)
+			if (endCol > startCol) {
+				return {
+					start: { row: coords.row, col: startCol },
+					end: { row: coords.row, col: endCol },
+				};
+			}
+
+			return null;
+		} catch (error) {
+			console.warn("Error finding word bounds:", error);
+			return null;
+		}
+	}
+
+	/**
+	 * Check if a character is part of a word
+	 */
+	isWordCharacter(char) {
+		if (!char) return false;
+		// Word characters: letters, numbers, underscore, hyphen, dot
+		return /[a-zA-Z0-9_\-.]/.test(char);
 	}
 
 	/**
