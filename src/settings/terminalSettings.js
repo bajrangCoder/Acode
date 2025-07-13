@@ -9,7 +9,7 @@ import fsOperation from "fileSystem";
 import fonts from "lib/fonts";
 import appSettings from "lib/settings";
 import FileBrowser from "pages/fileBrowser";
-import Url from "utils/Url";
+
 
 export default function terminalSettings() {
 	const title = strings["terminal settings"];
@@ -211,15 +211,11 @@ export default function terminalSettings() {
 
 			// Create backup
 			const backupPath = await Terminal.backup();
-			const backupFilename = "aterm_backup.tar";
-			const destinationPath = Url.join(url, backupFilename);
-			const sourceFS = fsOperation(backupPath);
-
-			const res = await sourceFS.moveTo(destinationPath);
+			await system.copyToUri(backupPath,url,"aterm_backup.tar",console.log,console.error)
 
 			alert(
 				strings.success.toUpperCase(),
-				`${strings["backup successful"]}\n${res}.`,
+				`${strings["backup successful"]}.`,
 			);
 		} catch (error) {
 			console.error("Terminal backup failed:", error);
@@ -234,17 +230,16 @@ export default function terminalSettings() {
 		try {
 			sdcard.openDocumentFile(
 				async (data) => {
-					const backupFilename = "aterm_backup.tar";
-					const tempBackupPath = cordova.file.dataDirectory + backupFilename;
-					const sourceFS = fsOperation(data.uri);
-					const tempFS = fsOperation(tempBackupPath);
-
-					await sourceFS.copyTo(tempBackupPath);
-
+					//this will create a file at $PREFIX/atem_backup.bin
+					await system.copyToUri(data.uri,cordova.file.dataDirectory,"aterm_backup",console.log,console.error)
+					
 					// Restore
 					await Terminal.restore();
 
 					// Clean up
+					const backupFilename = "aterm_backup.bin";
+					const tempBackupPath = cordova.file.dataDirectory + backupFilename;
+					const tempFS = fsOperation(tempBackupPath);
 					await tempFS.delete();
 
 					alert(
@@ -253,7 +248,7 @@ export default function terminalSettings() {
 					);
 				},
 				toast,
-				"application/octet-stream",
+				"application/x-tar",
 			);
 		} catch (error) {
 			console.error("Terminal restore failed:", error);

@@ -316,14 +316,7 @@ const Terminal = {
             }
     
             const cmd = `
-            set -e
-    
-            if [ -f "$PREFIX/aterm_backup.tar" ]; then
-                :  # do nothing
-            else
-                echo "Backup File does not exist"
-                exit 1
-            fi
+            sleep 2
     
             INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
     
@@ -335,7 +328,7 @@ const Terminal = {
                 rm -rf -- "$item"
             done
     
-            tar -xf "$PREFIX/aterm_backup.tar" -C "$PREFIX"
+            tar -xf "$PREFIX/aterm_backup.bin" -C "$PREFIX"
             echo "ok"
             `;
     
