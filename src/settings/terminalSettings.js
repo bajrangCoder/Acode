@@ -10,7 +10,6 @@ import fonts from "lib/fonts";
 import appSettings from "lib/settings";
 import FileBrowser from "pages/fileBrowser";
 
-
 export default function terminalSettings() {
 	const title = strings["terminal settings"];
 	const values = appSettings.value;
@@ -211,12 +210,15 @@ export default function terminalSettings() {
 
 			// Create backup
 			const backupPath = await Terminal.backup();
-			await system.copyToUri(backupPath,url,"aterm_backup.tar",console.log,console.error)
-
-			alert(
-				strings.success.toUpperCase(),
-				`${strings["backup successful"]}.`,
+			await system.copyToUri(
+				backupPath,
+				url,
+				"aterm_backup.tar",
+				console.log,
+				console.error,
 			);
+
+			alert(strings.success.toUpperCase(), `${strings["backup successful"]}.`);
 		} catch (error) {
 			console.error("Terminal backup failed:", error);
 			toast(error.toString());
@@ -231,8 +233,14 @@ export default function terminalSettings() {
 			sdcard.openDocumentFile(
 				async (data) => {
 					//this will create a file at $PREFIX/atem_backup.bin
-					await system.copyToUri(data.uri,cordova.file.dataDirectory,"aterm_backup",console.log,console.error)
-					
+					await system.copyToUri(
+						data.uri,
+						cordova.file.dataDirectory,
+						"aterm_backup",
+						console.log,
+						console.error,
+					);
+
 					// Restore
 					await Terminal.restore();
 
