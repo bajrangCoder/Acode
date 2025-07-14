@@ -11,6 +11,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal as Xterm } from "@xterm/xterm";
+import toast from "components/toast";
 import confirm from "dialogs/confirm";
 import fonts from "lib/fonts";
 import keyBindings from "lib/keyBindings";
@@ -524,7 +525,8 @@ export default class TerminalComponent {
 
 				// If AXS still not running after retries, throw error
 				if (!(await Terminal.isAxsRunning())) {
-					throw new Error("Failed to start AXS server after multiple attempts");
+					toast("Failed to start AXS server after multiple attempts");
+					//throw new Error("Failed to start AXS server after multiple attempts");
 				}
 			}
 
@@ -587,6 +589,22 @@ export default class TerminalComponent {
 			// Focus terminal and ensure it's ready
 			this.terminal.focus();
 			this.fit();
+		};
+
+		this.websocket.onmessage = (event) => {
+			// Handle text messages (exit events)
+			if (typeof event.data === "string") {
+				try {
+					const message = JSON.parse(event.data);
+					if (message.type === "exit") {
+						this.onProcessExit?.(message.data);
+						return;
+					}
+				} catch (error) {
+					// Not a JSON message, let attachAddon handle it
+				}
+			}
+			// For binary data or non-exit text messages, let attachAddon handle them
 		};
 
 		this.websocket.onclose = (event) => {
@@ -918,4 +936,5 @@ export default class TerminalComponent {
 	onError(error) {}
 	onTitleChange(title) {}
 	onBell() {}
+	onProcessExit(exitData) {}
 }

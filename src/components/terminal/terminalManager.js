@@ -6,6 +6,7 @@
 import EditorFile from "lib/editorFile";
 import TerminalComponent from "./terminal";
 import "@xterm/xterm/css/xterm.css";
+import toast from "components/toast";
 
 class TerminalManager {
 	constructor() {
@@ -343,6 +344,22 @@ class TerminalManager {
 				const formattedTitle = `Terminal ${this.terminalCounter} - ${title}`;
 				terminalFile.filename = formattedTitle;
 			}
+		};
+
+		terminalComponent.onProcessExit = (exitData) => {
+			// Format exit message based on exit code and signal
+			let message;
+			if (exitData.signal) {
+				message = `Process terminated by signal ${exitData.signal}`;
+			} else if (exitData.exit_code === 0) {
+				message = `Process exited successfully (code ${exitData.exit_code})`;
+			} else {
+				message = `Process exited with code ${exitData.exit_code}`;
+			}
+
+			this.closeTerminal(terminalId);
+			terminalFile.remove(true);
+			toast(message);
 		};
 
 		// Store references for cleanup
