@@ -715,7 +715,7 @@ export default class TerminalTouchSelection {
 		// Show/hide start handle at logical start position
 		if (startPos) {
 			this.startHandle.style.display = "block";
-			this.startHandle.style.left = `${startPos.x - this.options.handleSize / 2}px`;
+			this.startHandle.style.left = `${startPos.x - this.options.handleSize / 2 - 0.1}px`;
 			this.startHandle.style.top = `${startPos.y + this.cellDimensions.height + 4}px`;
 		} else {
 			this.startHandle.style.display = "none";
@@ -724,7 +724,7 @@ export default class TerminalTouchSelection {
 		// Show/hide end handle at logical end position
 		if (endPos) {
 			this.endHandle.style.display = "block";
-			this.endHandle.style.left = `${endPos.x + this.cellDimensions.width - this.options.handleSize / 2}px`;
+			this.endHandle.style.left = `${endPos.x + this.cellDimensions.width - this.options.handleSize / 2 - 1}px`;
 			this.endHandle.style.top = `${endPos.y + this.cellDimensions.height + 4}px`;
 		} else {
 			this.endHandle.style.display = "none";
