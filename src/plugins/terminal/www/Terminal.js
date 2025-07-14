@@ -1,11 +1,5 @@
 const Executor = require("./Executor");
 
-/**
- * AXS server version tag to be used in downloads.
- * @constant {string}
- */
-const AXS_VERSION_TAG = "v0.2.5";
-
 const Terminal = {
     /**
      * Starts the AXS environment by writing init scripts and executing the sandbox.
@@ -117,17 +111,17 @@ const Terminal = {
             if (arch === "arm64-v8a") {
                 libTalloc = "https://raw.githubusercontent.com/Acode-Foundation/Acode/main/src/plugins/proot/libs/arm64/libtalloc.so";
                 prootUrl = "https://raw.githubusercontent.com/Acode-Foundation/Acode/main/src/plugins/proot/libs/arm64/libproot-xed.so";
-                axsUrl = `https://github.com/bajrangCoder/acodex_server/releases/download/${AXS_VERSION_TAG}/axs-musl-android-arm64`;
+                axsUrl = `https://github.com/bajrangCoder/acodex_server/releases/latest/download/axs-musl-android-arm64`;
                 alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.0-aarch64.tar.gz";
             } else if (arch === "armeabi-v7a") {
                 libTalloc = "https://raw.githubusercontent.com/Acode-Foundation/Acode/main/src/plugins/proot/libs/arm32/libtalloc.so";
                 prootUrl = "https://raw.githubusercontent.com/Acode-Foundation/Acode/main/src/plugins/proot/libs/arm32/libproot-xed.so";
-                axsUrl = `https://github.com/bajrangCoder/acodex_server/releases/download/${AXS_VERSION_TAG}/axs-musl-android-armv7`;
+                axsUrl = `https://github.com/bajrangCoder/acodex_server/releases/latest/download/axs-musl-android-armv7`;
                 alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/armhf/alpine-minirootfs-3.21.0-armhf.tar.gz";
             } else if (arch === "x86_64") {
                 libTalloc = "https://raw.githubusercontent.com/Acode-Foundation/Acode/main/src/plugins/proot/libs/x64/libtalloc.so";
                 prootUrl = "https://raw.githubusercontent.com/Acode-Foundation/Acode/main/src/plugins/proot/libs/x64/libproot-xed.so";
-                axsUrl = `https://github.com/bajrangCoder/acodex_server/releases/download/${AXS_VERSION_TAG}/axs-musl-android-x86_64`;
+                axsUrl = `https://github.com/bajrangCoder/acodex_server/releases/latest/download/axs-musl-android-x86_64`;
                 alpineUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.0-x86_64.tar.gz";
             } else {
                 throw new Error(`Unsupported architecture: ${arch}`);
@@ -268,21 +262,21 @@ const Terminal = {
                 reject("Alpine is not installed.");
                 return;
             }
-    
+
             const cmd = `
             set -e
-    
+
             INCLUDE_FILES="alpine .downloaded .extracted axs"
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES libtalloc.so.2 libproot-xed.so"
             fi
-    
+
             EXCLUDE="--exclude=alpine/data --exclude=alpine/system --exclude=alpine/vendor --exclude=alpine/sdcard --exclude=alpine/storage"
-    
+
             tar -cf "$PREFIX/aterm_backup.tar" -C "$PREFIX" $EXCLUDE $INCLUDE_FILES
             echo "ok"
             `;
-    
+
             const result = await Executor.execute(cmd);
             if (result === "ok") {
                 resolve(cordova.file.dataDirectory + "aterm_backup.tar");
@@ -314,24 +308,24 @@ const Terminal = {
             if (await this.isAxsRunning()) {
                 await this.stopAxs();
             }
-    
+
             const cmd = `
             sleep 2
-    
+
             INCLUDE_FILES="$PREFIX/alpine $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/axs"
-    
+
             if [ "$FDROID" = "true" ]; then
                 INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
             fi
-    
+
             for item in $INCLUDE_FILES; do
                 rm -rf -- "$item"
             done
-    
+
             tar -xf "$PREFIX/aterm_backup.bin" -C "$PREFIX"
             echo "ok"
             `;
-    
+
             const result = await Executor.execute(cmd);
             if (result === "ok") {
                 resolve(result);
