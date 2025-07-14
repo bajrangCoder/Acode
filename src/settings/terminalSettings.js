@@ -5,6 +5,7 @@ import {
 } from "components/terminal";
 import toast from "components/toast";
 import alert from "dialogs/alert";
+import loader from "dialogs/loader";
 import fsOperation from "fileSystem";
 import fonts from "lib/fonts";
 import appSettings from "lib/settings";
@@ -208,6 +209,8 @@ export default function terminalSettings() {
 			// Ask user to select backup location
 			const { url } = await FileBrowser("folder", strings["select folder"]);
 
+			loader.showTitleLoader();
+
 			// Create backup
 			const backupPath = await Terminal.backup();
 			await system.copyToUri(
@@ -217,9 +220,10 @@ export default function terminalSettings() {
 				console.log,
 				console.error,
 			);
-
+			loader.removeTitleLoader();
 			alert(strings.success.toUpperCase(), `${strings["backup successful"]}.`);
 		} catch (error) {
+			loader.removeTitleLoader();
 			console.error("Terminal backup failed:", error);
 			toast(error.toString());
 		}
@@ -232,6 +236,7 @@ export default function terminalSettings() {
 		try {
 			sdcard.openDocumentFile(
 				async (data) => {
+					loader.showTitleLoader();
 					//this will create a file at $PREFIX/atem_backup.bin
 					await system.copyToUri(
 						data.uri,
@@ -249,7 +254,7 @@ export default function terminalSettings() {
 					const tempBackupPath = cordova.file.dataDirectory + backupFilename;
 					const tempFS = fsOperation(tempBackupPath);
 					await tempFS.delete();
-
+					loader.removeTitleLoader();
 					alert(
 						strings.success.toUpperCase(),
 						"Terminal restored successfully",
@@ -259,6 +264,7 @@ export default function terminalSettings() {
 				"application/x-tar",
 			);
 		} catch (error) {
+			loader.removeTitleLoader();
 			console.error("Terminal restore failed:", error);
 			toast(error.toString());
 		}
