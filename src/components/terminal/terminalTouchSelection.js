@@ -55,6 +55,10 @@ export default class TerminalTouchSelection {
 		this.wasFocusedBeforeSelection = false;
 		this.contextMenuShouldStayVisible = false;
 
+		// Selection protection during keyboard events
+		this.selectionProtected = false;
+		this.protectionTimeout = null;
+
 		this.init();
 	}
 
@@ -460,6 +464,11 @@ export default class TerminalTouchSelection {
 	onTerminalAreaTouchStart(event) {
 		// Clear selection if touching terminal area while selecting, except on handles or context menu
 		if (this.isSelecting) {
+			// Don't clear selection if it's protected (during keyboard events)
+			if (this.selectionProtected) {
+				return;
+			}
+
 			// Don't interfere with context menu at all
 			if (this.contextMenu && this.contextMenu.style.display === "flex") {
 				// Context menu is visible, check if touching it
@@ -515,18 +524,35 @@ export default class TerminalTouchSelection {
 		setTimeout(() => {
 			this.updateCellDimensions();
 			if (this.isSelecting) {
-				// Clear selection if it becomes invalid due to resize
+				// Don't clear selection if it's protected (during keyboard events)
+				if (this.selectionProtected) {
+					// Just update handle positions during protected period
+					this.updateHandlePositions();
+					return;
+				}
+
+				// Only clear selection if it becomes invalid due to actual content resize
+				// Don't clear selection for keyboard-related resizes
 				if (
-					this.selectionStart.row >= size.rows ||
-					this.selectionEnd.row >= size.rows
+					this.selectionStart &&
+					this.selectionEnd &&
+					(this.selectionStart.row >= size.rows ||
+						this.selectionEnd.row >= size.rows)
 				) {
 					this.clearSelection();
-				} else {
+				} else if (this.isSelecting) {
+					// Maintain selection and update handle positions
 					this.updateHandlePositions();
-					// Hide context menu during resize
+					// Temporarily hide context menu during resize but keep selection
 					if (this.contextMenu && this.contextMenu.style.display === "flex") {
 						this.hideContextMenu();
 					}
+					// Re-show context menu after resize if selection is still active
+					setTimeout(() => {
+						if (this.isSelecting && this.options.showContextMenu) {
+							this.showContextMenu();
+						}
+					}, 100);
 				}
 			}
 		}, 50);
@@ -538,6 +564,16 @@ export default class TerminalTouchSelection {
 
 		// Store initial focus state
 		this.wasFocusedBeforeSelection = this.isTerminalFocused();
+
+		// Protect selection from being cancelled by keyboard events
+		this.selectionProtected = true;
+		if (this.protectionTimeout) {
+			clearTimeout(this.protectionTimeout);
+		}
+		// Remove protection after keyboard events have settled
+		this.protectionTimeout = setTimeout(() => {
+			this.selectionProtected = false;
+		}, 1000);
 
 		this.isSelecting = true;
 
@@ -840,14 +876,14 @@ export default class TerminalTouchSelection {
 			cordova.plugins.clipboard.copy(selectionText);
 		}
 
-		this.clearSelection();
+		this.forceClearSelection();
 	}
 
 	pasteFromClipboard() {
 		if (cordova?.plugins?.clipboard) {
 			cordova.plugins.clipboard.paste((text) => {
 				this.terminal.paste(text);
-				this.clearSelection();
+				this.forceClearSelection();
 			});
 		}
 	}
@@ -855,10 +891,15 @@ export default class TerminalTouchSelection {
 	showMoreOptions() {
 		// Implement additional options if needed
 		window.toast("More options are not implemented yet.");
-		this.clearSelection();
+		this.forceClearSelection();
 	}
 
 	clearSelection() {
+		// Don't clear if selection is protected
+		if (this.selectionProtected) {
+			return;
+		}
+
 		// Store focus state before clearing
 		const shouldRestoreFocus =
 			this.wasFocusedBeforeSelection && this.isSelecting;
@@ -879,15 +920,33 @@ export default class TerminalTouchSelection {
 			this.tapHoldTimeout = null;
 		}
 
-		// Restore focus state if terminal was focused before selection
+		// Clear protection timeout
+		if (this.protectionTimeout) {
+			clearTimeout(this.protectionTimeout);
+			this.protectionTimeout = null;
+		}
+		this.selectionProtected = false;
+
+		// Only restore focus if explicitly clearing selection (not due to keyboard close)
+		// and if terminal was focused before selection
 		if (shouldRestoreFocus && !this.isTerminalFocused()) {
 			setTimeout(() => {
-				this.terminal.focus();
-			}, 50);
+				if (!this.isSelecting) {
+					this.terminal.focus();
+				}
+			}, 150);
 		}
 
 		// Reset focus tracking
 		this.wasFocusedBeforeSelection = false;
+	}
+
+	forceClearSelection() {
+		// Temporarily disable protection to force clear
+		const wasProtected = this.selectionProtected;
+		this.selectionProtected = false;
+		this.clearSelection();
+		// Don't restore protection state since we're clearing
 	}
 
 	touchToTerminalCoords(touch) {
@@ -1084,7 +1143,7 @@ export default class TerminalTouchSelection {
 
 	destroy() {
 		// Clear selection
-		this.clearSelection();
+		this.forceClearSelection();
 
 		// Remove event listeners
 		this.terminal.element.removeEventListener(
