@@ -48,23 +48,13 @@
         min-width: 30px;
       }
 
-      @media (min-width: 769px) {
+      @media (min-width: 1024px) {
         height: 35px;
         font-size: 1.1em;
 
         .icon {
           height: 35px;
           min-width: 35px;
-        }
-      }
-
-      @media (min-width: 1024px) {
-        height: 40px;
-        font-size: 1.2em;
-
-        .icon {
-          height: 40px;
-          min-width: 40px;
         }
       }
     }
@@ -83,23 +73,13 @@
           font-size: 1em;
         }
 
-        @media (min-width: 769px) {
+        @media (min-width: 1024px) {
           height: 35px;
 
           .icon {
-            height: 33px;
-            min-width: 33px;
+            height: 32px;
+            min-width: 32px;
             font-size: 1.1em;
-          }
-        }
-
-        @media (min-width: 1024px) {
-          height: 40px;
-
-          .icon {
-            height: 38px;
-            min-width: 38px;
-            font-size: 1.2em;
           }
         }
       }
@@ -151,14 +131,9 @@
       }
     }
 
-    @media (min-width: 769px) {
-      min-height: 70px;
-      font-size: 1.1em;
-    }
-
     @media (min-width: 1024px) {
-      min-height: 80px;
-      font-size: 1.2em;
+      min-height: 65px;
+      font-size: 1.1em;
     }
 
     .container {
@@ -222,9 +197,9 @@
         width: 20px;
       }
 
-      @media (min-width: 769px) {
-        height: 70px;
-        width: 70px;
+      @media (min-width: 1024px) {
+        height: 65px;
+        width: 65px;
         font-size: 1.6em;
 
         &.no-icon {
@@ -232,15 +207,6 @@
         }
       }
 
-      @media (min-width: 1024px) {
-        height: 80px;
-        width: 80px;
-        font-size: 1.8em;
-
-        &.no-icon {
-          width: 30px;
-        }
-      }
     }
 
     .icon {

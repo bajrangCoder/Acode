@@ -45,8 +45,8 @@
     transform: translate(0, -100%, 0);
   }
 
-  @media (min-width: 769px) {
-    height: 60px;
+  @media (min-width: 1024px) {
+    height: 50px;
 
     input {
       margin: 8px;
@@ -56,26 +56,9 @@
     }
 
     .icon {
-      height: 60px;
-      width: 60px;
-      font-size: 1.4em;
-    }
-  }
-
-  @media (min-width: 1024px) {
-    height: 70px;
-
-    input {
-      margin: 10px;
-      border-radius: 8px;
-      font-size: 1.2em;
-      padding: 0 16px;
-    }
-
-    .icon {
-      height: 70px;
-      width: 70px;
-      font-size: 1.6em;
+      height: 50px;
+      width: 50px;
+      font-size: 1.3em;
     }
   }
 }
