@@ -7,11 +7,114 @@ import EditorFile from "lib/editorFile";
 import TerminalComponent from "./terminal";
 import "@xterm/xterm/css/xterm.css";
 import toast from "components/toast";
+import helpers from "utils/helpers";
+
+const TERMINAL_SESSION_STORAGE_KEY = "acodeTerminalSessions";
 
 class TerminalManager {
 	constructor() {
 		this.terminals = new Map();
 		this.terminalCounter = 0;
+	}
+
+	getPersistedSessions() {
+		try {
+			const stored = helpers.parseJSON(
+				localStorage.getItem(TERMINAL_SESSION_STORAGE_KEY),
+			);
+			if (!Array.isArray(stored)) return [];
+			return stored
+				.map((entry) => {
+					if (!entry) return null;
+					if (typeof entry === "string") {
+						return { pid: entry, name: `Terminal ${entry}` };
+					}
+					if (typeof entry === "object" && entry.pid) {
+						const pid = String(entry.pid);
+						return {
+							pid,
+							name: entry.name || `Terminal ${pid}`,
+						};
+					}
+					return null;
+				})
+				.filter(Boolean);
+		} catch (error) {
+			console.error("Failed to read persisted terminal sessions:", error);
+			return [];
+		}
+	}
+
+	savePersistedSessions(sessions) {
+		try {
+			localStorage.setItem(
+				TERMINAL_SESSION_STORAGE_KEY,
+				JSON.stringify(sessions),
+			);
+		} catch (error) {
+			console.error("Failed to persist terminal sessions:", error);
+		}
+	}
+
+	persistTerminalSession(pid, name) {
+		if (!pid) return;
+
+		const pidStr = String(pid);
+		const sessions = this.getPersistedSessions();
+		const existingIndex = sessions.findIndex(
+			(session) => session.pid === pidStr,
+		);
+		const sessionData = {
+			pid: pidStr,
+			name: name || `Terminal ${pidStr}`,
+		};
+
+		if (existingIndex >= 0) {
+			sessions[existingIndex] = {
+				...sessions[existingIndex],
+				...sessionData,
+			};
+		} else {
+			sessions.push(sessionData);
+		}
+
+		this.savePersistedSessions(sessions);
+	}
+
+	removePersistedSession(pid) {
+		if (!pid) return;
+
+		const pidStr = String(pid);
+		const sessions = this.getPersistedSessions();
+		const nextSessions = sessions.filter((session) => session.pid !== pidStr);
+
+		if (nextSessions.length !== sessions.length) {
+			this.savePersistedSessions(nextSessions);
+		}
+	}
+
+	async restorePersistedSessions() {
+		const sessions = this.getPersistedSessions();
+		if (!sessions.length) return;
+
+		for (const session of sessions) {
+			if (!session?.pid) continue;
+			if (this.terminals.has(session.pid)) continue;
+
+			try {
+				await this.createServerTerminal({
+					pid: session.pid,
+					name: session.name,
+					reconnecting: true,
+				});
+			} catch (error) {
+				console.error(
+					`Failed to restore terminal session ${session.pid}:`,
+					error,
+				);
+				this.removePersistedSession(session.pid);
+			}
+		}
 	}
 
 	/**
@@ -71,7 +174,7 @@ class TerminalManager {
 
 						// Connect to session if in server mode
 						if (terminalComponent.serverMode) {
-							await terminalComponent.connectToSession();
+							await terminalComponent.connectToSession(options.pid);
 						} else {
 							// For local mode, just write a welcome message
 							terminalComponent.write(
@@ -98,6 +201,10 @@ class TerminalManager {
 						};
 
 						this.terminals.set(uniqueId, instance);
+
+						if (terminalComponent.serverMode && terminalComponent.pid) {
+							this.persistTerminalSession(terminalComponent.pid, terminalName);
+						}
 						resolve(instance);
 					} catch (error) {
 						console.error("Failed to initialize terminal:", error);
@@ -368,6 +475,10 @@ class TerminalManager {
 				const formattedTitle = `Terminal ${this.terminalCounter} - ${title}`;
 				terminalFile.filename = formattedTitle;
 
+				if (terminalComponent.serverMode && terminalComponent.pid) {
+					this.persistTerminalSession(terminalComponent.pid, formattedTitle);
+				}
+
 				// Refresh the header subtitle if this terminal is active
 				if (
 					editorManager.activeFile &&
@@ -421,6 +532,10 @@ class TerminalManager {
 		if (!terminal) return;
 
 		try {
+			if (terminal.component.serverMode && terminal.component.pid) {
+				this.removePersistedSession(terminal.component.pid);
+			}
+
 			// Cleanup resize observer
 			if (terminal.file._resizeObserver) {
 				terminal.file._resizeObserver.disconnect();
