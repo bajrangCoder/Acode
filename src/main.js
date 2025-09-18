@@ -18,10 +18,7 @@ import { setKeyBindings } from "ace/commands";
 import { initModes } from "ace/modelist";
 import Contextmenu from "components/contextmenu";
 import Sidebar from "components/sidebar";
-import {
-	DEFAULT_TERMINAL_SETTINGS,
-	TerminalManager,
-} from "components/terminal";
+import { TerminalManager } from "components/terminal";
 import tile from "components/tile";
 import toast from "components/toast";
 import tutorial from "components/tutorial";
@@ -37,7 +34,6 @@ import checkPluginsUpdate from "lib/checkPluginsUpdate";
 import EditorFile from "lib/editorFile";
 import EditorManager from "lib/editorManager";
 import { initFileList } from "lib/fileList";
-import fonts from "lib/fonts";
 import lang from "lib/lang";
 import loadPlugins from "lib/loadPlugins";
 import Logger from "lib/logger";
@@ -491,20 +487,6 @@ async function loadApp() {
 	}
 
 	initFileList();
-
-	const terminalSettings = settings.value.terminalSettings || {};
-	const terminalFontFamily =
-		terminalSettings.fontFamily || DEFAULT_TERMINAL_SETTINGS.fontFamily;
-	if (terminalFontFamily) {
-		try {
-			await fonts.loadFont(terminalFontFamily);
-		} catch (error) {
-			console.error(
-				`Failed to preload terminal font ${terminalFontFamily}:`,
-				error,
-			);
-		}
-	}
 
 	TerminalManager.restorePersistedSessions().catch((error) => {
 		console.error("Terminal restoration failed:", error);
