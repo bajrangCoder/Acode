@@ -97,16 +97,22 @@ class TerminalManager {
 		const sessions = this.getPersistedSessions();
 		if (!sessions.length) return;
 
+		const manager = window.editorManager;
+		const activeFileId = manager?.activeFile?.id;
+		const restoredTerminals = [];
+
 		for (const session of sessions) {
 			if (!session?.pid) continue;
 			if (this.terminals.has(session.pid)) continue;
 
 			try {
-				await this.createServerTerminal({
+				const instance = await this.createServerTerminal({
 					pid: session.pid,
 					name: session.name,
 					reconnecting: true,
+					render: false,
 				});
+				if (instance) restoredTerminals.push(instance);
 			} catch (error) {
 				console.error(
 					`Failed to restore terminal session ${session.pid}:`,
@@ -114,6 +120,13 @@ class TerminalManager {
 				);
 				this.removePersistedSession(session.pid);
 			}
+		}
+
+		if (activeFileId && manager?.getFile) {
+			const fileToRestore = manager.getFile(activeFileId, "id");
+			fileToRestore?.makeActive();
+		} else if (!manager?.activeFile && restoredTerminals.length) {
+			restoredTerminals[0]?.file?.makeActive();
 		}
 	}
 
@@ -124,11 +137,15 @@ class TerminalManager {
 	 */
 	async createTerminal(options = {}) {
 		try {
+			const { render, serverMode, ...terminalOptions } = options;
+			const shouldRender = render !== false;
+			const isServerMode = serverMode !== false;
+
 			const terminalId = `terminal_${++this.terminalCounter}`;
 			const terminalName = options.name || `Terminal ${this.terminalCounter}`;
 
 			// Check if terminal is installed before proceeding
-			if (options.serverMode !== false) {
+			if (isServerMode) {
 				const installationResult = await this.checkAndInstallTerminal();
 				if (!installationResult.success) {
 					throw new Error(installationResult.error);
@@ -137,8 +154,8 @@ class TerminalManager {
 
 			// Create terminal component
 			const terminalComponent = new TerminalComponent({
-				serverMode: options.serverMode !== false,
-				...options,
+				serverMode: isServerMode,
+				...terminalOptions,
 			});
 
 			// Create container
@@ -162,7 +179,7 @@ class TerminalManager {
 				type: "terminal",
 				content: terminalContainer,
 				tabIcon: "licons terminal",
-				render: true,
+				render: shouldRender,
 			});
 
 			// Wait for tab creation and setup
@@ -174,7 +191,7 @@ class TerminalManager {
 
 						// Connect to session if in server mode
 						if (terminalComponent.serverMode) {
-							await terminalComponent.connectToSession(options.pid);
+							await terminalComponent.connectToSession(terminalOptions.pid);
 						} else {
 							// For local mode, just write a welcome message
 							terminalComponent.write(
