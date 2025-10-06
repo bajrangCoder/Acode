@@ -469,7 +469,7 @@ async function getFilteredPlugins(filterState) {
 			const hasMore = items.length === LIMIT;
 			return { items, hasMore };
 		} catch (error) {
-			console.error(error);
+			console.error(`Failed to get Filtered Plugins: `, error);
 			return { items: [], hasMore: false };
 		}
 	}
