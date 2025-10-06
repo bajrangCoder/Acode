@@ -516,7 +516,8 @@ async function getFilteredPlugins(filterState) {
 			);
 			filterState.buffer.push(...matched);
 		} catch (error) {
-			window.log("error", error);
+			window.log("error", "Failed to fetch filtered plugins:");
+            window.log("error", error);
 			filterState.hasMoreSource = false;
 			break;
 		}
