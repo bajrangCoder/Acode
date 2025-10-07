@@ -431,5 +431,6 @@
 	"check for app updates": "ऐप अपडेट की जांच करें",
 	"prompt update check consent message": "Acode can check for new app updates when you're online. Enable update checks?",
 	"keywords": "Keywords",
-	"author": "Author"
+	"author": "Author",
+	"filtered by": "Filtered by"
 }

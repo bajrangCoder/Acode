@@ -321,7 +321,7 @@ async function filterPlugins() {
 		const filterMessage = (
 			<div className="filter-message">
 				<span>
-					Filtered by <strong>{filterState.displayLabel}</strong>
+					{strings["filtered by"]} <strong>{filterState.displayLabel}</strong>
 				</span>
 				<span
 					className="icon clearclose close-button"
@@ -517,7 +517,7 @@ async function getFilteredPlugins(filterState) {
 			filterState.buffer.push(...matched);
 		} catch (error) {
 			window.log("error", "Failed to fetch filtered plugins:");
-            window.log("error", error);
+			window.log("error", error);
 			filterState.hasMoreSource = false;
 			break;
 		}

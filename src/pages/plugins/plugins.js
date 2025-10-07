@@ -104,7 +104,7 @@ export default function PluginsInclude(updates) {
 
     const filterMessage = (
       <div className="filter-message">
-        Filtered by <strong>{normalizedFilter.displayLabel}</strong>
+        {strings["filtered by"]} <strong>{normalizedFilter.displayLabel}</strong>
         <span className="icon clearclose" data-action="clear-filter" onclick={clearFilter}></span>
       </div>
     );
