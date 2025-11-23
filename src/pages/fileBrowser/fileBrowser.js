@@ -1276,11 +1276,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 					}
 				} else {
 					if (arg === "folder") {
-						newUrl = await helpers.createFileStructure(
-							url,
-							entryName,
-							false,
-						);
+						newUrl = await helpers.createFileStructure(url, entryName, false);
 					}
 					if (arg === "file") {
 						newUrl = await helpers.createFileStructure(url, entryName);
