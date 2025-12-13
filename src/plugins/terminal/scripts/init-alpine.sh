@@ -1,12 +1,10 @@
-
-
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/share/bin:/usr/share/sbin:/usr/local/bin:/usr/local/sbin:/system/bin:/system/xbin:$PREFIX/local/bin
 export PS1="\[\e[38;5;46m\]\u\[\033[39m\]@localhost \[\033[39m\]\w \[\033[0m\]\\$ "
 export HOME=/home
 export TERM=xterm-256color
 
 
-required_packages="bash command-not-found"
+required_packages="bash command-not-found tzdata wget"
 missing_packages=""
 
 for pkg in $required_packages; do
@@ -33,6 +31,16 @@ fi
 
 
 if [ "$1" = "--installing" ]; then
+    echo "Configuring timezone..."
+    
+    if [ -n "$ANDROID_TZ" ] && [ -f "/usr/share/zoneinfo/$ANDROID_TZ" ]; then
+        ln -sf "/usr/share/zoneinfo/$ANDROID_TZ" /etc/localtime
+        echo "$ANDROID_TZ" > /etc/timezone
+        echo "Timezone set to: $ANDROID_TZ"
+    else
+        echo "Failed to detect timezone"
+    fi
+
     mkdir -p "$PREFIX/.configured"
     echo "Installation completed."
     exit 0
@@ -112,12 +120,13 @@ fi
 
 # Add PS1 only if not already present
 if ! grep -q 'PS1=' "$PREFIX/alpine/initrc"; then
-    echo 'PS1="\033[1;32m\u\033[0m@localhost \w \$ "' >> "$PREFIX/alpine/initrc"
+    echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \w \$ "' >> "$PREFIX/alpine/initrc"
 fi
 
 chmod +x "$PREFIX/alpine/initrc"
 
 #actual souce
+#everytime a terminal is started initrc will run
 "$PREFIX/axs" -c "bash --rcfile /initrc -i"
 
 else
