@@ -2,6 +2,7 @@ package com.foxdebug.browser;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -9,14 +10,24 @@ import android.util.Log;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsetsController;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
+import android.Manifest;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import com.foxdebug.system.Ui;
 import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.List;
 
 public class BrowserActivity extends Activity {
 
   private Browser browser;
   private Ui.Theme theme;
+  
+  private static final int PERMISSION_REQUEST_CODE = 100;
+  private PermissionRequest pendingPermissionRequest;
+  private String[] pendingResources;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -35,6 +46,7 @@ public class BrowserActivity extends Activity {
     }
 
     browser = new Browser(this, theme, onlyConsole);
+    browser.setPermissionHandler(this);
     browser.setUrl(url);
     setContentView(browser);
     setSystemTheme(theme.get("primaryColor"));
@@ -46,6 +58,95 @@ public class BrowserActivity extends Activity {
 
     if (!didGoBack) {
       browser.exit();
+    }
+  }
+  
+  /**
+   * Handle WebView permission request by checking/requesting Android runtime permissions
+   */
+  public void handlePermissionRequest(PermissionRequest request, String[] resources) {
+    this.pendingPermissionRequest = request;
+    this.pendingResources = resources;
+    
+    List<String> permissionsToRequest = new ArrayList<>();
+    
+    for (String resource : resources) {
+      if (resource.equals(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) 
+            != PackageManager.PERMISSION_GRANTED) {
+          permissionsToRequest.add(Manifest.permission.CAMERA);
+        }
+      } else if (resource.equals(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
+            != PackageManager.PERMISSION_GRANTED) {
+          permissionsToRequest.add(Manifest.permission.RECORD_AUDIO);
+        }
+      }
+    }
+    
+    if (permissionsToRequest.isEmpty()) {
+      // All permissions already granted, grant to WebView
+      request.grant(resources);
+    } else {
+      // Request the needed Android permissions
+      ActivityCompat.requestPermissions(
+        this, 
+        permissionsToRequest.toArray(new String[0]), 
+        PERMISSION_REQUEST_CODE
+      );
+    }
+  }
+  
+  // Geolocation permission handling
+  private static final int GEOLOCATION_PERMISSION_REQUEST_CODE = 101;
+  private android.webkit.GeolocationPermissions.Callback pendingGeolocationCallback;
+  private String pendingGeolocationOrigin;
+  
+  public void handleGeolocationPermission(String origin, android.webkit.GeolocationPermissions.Callback callback) {
+    this.pendingGeolocationCallback = callback;
+    this.pendingGeolocationOrigin = origin;
+    
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
+        != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(
+        this,
+        new String[] { Manifest.permission.ACCESS_FINE_LOCATION },
+        GEOLOCATION_PERMISSION_REQUEST_CODE
+      );
+    } else {
+      // Already granted
+      callback.invoke(origin, true, false);
+      pendingGeolocationCallback = null;
+      pendingGeolocationOrigin = null;
+    }
+  }
+  
+  @Override
+  public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    
+    if (requestCode == PERMISSION_REQUEST_CODE && pendingPermissionRequest != null) {
+      boolean allGranted = true;
+      for (int result : grantResults) {
+        if (result != PackageManager.PERMISSION_GRANTED) {
+          allGranted = false;
+          break;
+        }
+      }
+      
+      if (allGranted) {
+        pendingPermissionRequest.grant(pendingResources);
+      } else {
+        pendingPermissionRequest.deny();
+      }
+      
+      pendingPermissionRequest = null;
+      pendingResources = null;
+    } else if (requestCode == GEOLOCATION_PERMISSION_REQUEST_CODE && pendingGeolocationCallback != null) {
+      boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+      pendingGeolocationCallback.invoke(pendingGeolocationOrigin, granted, false);
+      pendingGeolocationCallback = null;
+      pendingGeolocationOrigin = null;
     }
   }
 
