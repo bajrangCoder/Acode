@@ -19,14 +19,6 @@
       </activity>
     </config-file>
 
-    <config-file target="AndroidManifest.xml" parent="/*">
-      <uses-permission android:name="android.permission.CAMERA"/>
-      <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-      <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
-      <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-      <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    </config-file>
-
     <hook type="after_prepare" src="utils/updatePackage.js" />
 
     <resource-file src="res/android/menu_enter.xml" target="res/anim/menu_enter.xml" />
