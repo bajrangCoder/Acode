@@ -211,22 +211,10 @@ public class Browser extends LinearLayout {
     settings.setDomStorageEnabled(true);
     settings.setAllowContentAccess(true);
     settings.setDisplayZoomControls(false);
-    settings.setDomStorageEnabled(true);
-    
-    // Enable media streaming (camera/microphone)
-    settings.setMediaPlaybackRequiresUserGesture(false);
-    settings.setJavaScriptCanOpenWindowsAutomatically(true);
-    
-    // Allow mixed content (needed for some camera APIs on HTTPS sites)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-    }
-    
-    // Additional settings for file access and databases
     settings.setAllowFileAccess(true);
     settings.setDatabaseEnabled(true);
     
-    // Enable hardware acceleration for video rendering
+    // Enable hardware acceleration for better performance
     webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
     
     // Add clipboard bridge for JavaScript access
