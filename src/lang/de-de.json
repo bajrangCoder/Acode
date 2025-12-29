@@ -431,9 +431,5 @@
 	"prompt update check consent message": "Acode kann nach neuen App-Updates suchen, wenn Sie online sind. Update-Prüfungen aktivieren?",
 	"keywords": "Schlüsselwörter",
 	"author": "Autor",
-	"filtered by": "Gefiltert nach",
-	"add to home screen": "Add to home screen",
-	"pin shortcuts not supported": "Home screen shortcuts are not supported on this device.",
-	"save file before home shortcut": "Save the file before adding it to the home screen.",
-	"shortcut request sent": "Shortcut request opened. Tap Add to finish."
+	"filtered by": "Gefiltert nach"
 }
