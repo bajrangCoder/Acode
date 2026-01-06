@@ -677,16 +677,6 @@ public class System extends CordovaPlugin {
                     callback.error("File is not readable");
                     return;
                 }
-                
-                // Check file length before reading
-                // Note: For multi-byte encodings, file.length() (bytes) won't equal text length (chars),
-                // but if currentText is longer than file bytes, we know they're different
-                long fileBytes = file.length();
-                long currentTextBytes = currentText.getBytes(charset).length;
-                if (fileBytes != currentTextBytes) {
-                    callback.success(1); // Changed
-                    return;
-                }
 
                 Path path = file.toPath();
                 fileContent = new String(Files.readAllBytes(path), charset);

@@ -639,7 +639,6 @@ export default class EditorFile {
 			}
 		}
 
-		// native compares
 		try {
 			const fs = fsOperation(this.uri);
 			const oldText = await fs.readFile(this.encoding);
