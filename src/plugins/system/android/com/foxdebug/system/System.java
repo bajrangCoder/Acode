@@ -78,6 +78,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 import android.os.Build;
 import android.os.Environment;
@@ -655,53 +657,72 @@ public class System extends CordovaPlugin {
             }
 
             Uri uri = Uri.parse(fileUri);
-            InputStream inputStream = null;
+            Charset charset = Charset.forName(encoding);
             String fileContent;
 
-            try {
-                // Handle both file:// and content:// URIs
-                if ("file".equalsIgnoreCase(uri.getScheme())) {
-                    File file = new File(uri.getPath());
-                    if (!file.exists()) {
-                        callback.error("File does not exist");
-                        return;
-                    }
-                    inputStream = new FileInputStream(file);
-                } else {
-                    inputStream = context.getContentResolver().openInputStream(uri);
+            // Handle file:// URIs
+            if ("file".equalsIgnoreCase(uri.getScheme())) {
+                File file = new File(uri.getPath());
+                
+                // Validate file
+                if (!file.exists()) {
+                    callback.error("File does not exist");
+                    return;
                 }
-
-                if (inputStream == null) {
-                    callback.error("Cannot open file");
+                if (!file.isFile()) {
+                    callback.error("Path is not a file");
+                    return;
+                }
+                if (!file.canRead()) {
+                    callback.error("File is not readable");
+                    return;
+                }
+                
+                // Check file length before reading
+                // Note: For multi-byte encodings, file.length() (bytes) won't equal text length (chars),
+                // but if currentText is longer than file bytes, we know they're different
+                long fileBytes = file.length();
+                long currentTextBytes = currentText.getBytes(charset).length;
+                if (fileBytes != currentTextBytes) {
+                    callback.success(1); // Changed
                     return;
                 }
 
-                // Read file content with specified encoding
-                Charset charset = Charset.forName(encoding);
-                byte[] bytes = new byte[inputStream.available()];
-                int totalRead = 0;
-                int bytesRead;
-                
-                // Read in chunks to handle large files
-                java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-                byte[] chunk = new byte[8192];
-                while ((bytesRead = inputStream.read(chunk)) != -1) {
-                    buffer.write(chunk, 0, bytesRead);
-                }
-                bytes = buffer.toByteArray();
-                
-                CharBuffer charBuffer = charset.decode(ByteBuffer.wrap(bytes));
-                fileContent = charBuffer.toString();
+                Path path = file.toPath();
+                fileContent = new String(Files.readAllBytes(path), charset);
 
-            } finally {
-                if (inputStream != null) {
-                    try {
-                        inputStream.close();
-                    } catch (IOException ignored) {}
+            } else {
+                // Handle content:// URIs
+                InputStream inputStream = null;
+                try {
+                    inputStream = context.getContentResolver().openInputStream(uri);
+                    
+                    if (inputStream == null) {
+                        callback.error("Cannot open file");
+                        return;
+                    }
+
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(inputStream, charset))) {
+                        char[] buffer = new char[8192];
+                        int charsRead;
+                        while ((charsRead = reader.read(buffer)) != -1) {
+                            sb.append(buffer, 0, charsRead);
+                        }
+                    }
+                    fileContent = sb.toString();
+                    
+                } finally {
+                    if (inputStream != null) {
+                        try {
+                            inputStream.close();
+                        } catch (IOException ignored) {}
+                    }
                 }
             }
 
-            // check length first
+            // check length first 
             if (fileContent.length() != currentText.length()) {
                 callback.success(1); // Changed
                 return;
