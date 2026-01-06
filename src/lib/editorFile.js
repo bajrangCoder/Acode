@@ -610,26 +610,44 @@ export default class EditorFile {
 		}
 
 		const protocol = Url.getProtocol(this.#uri);
-		let fs;
+		const text = this.session.getValue();
+
 		if (/s?ftp:/.test(protocol)) {
 			// if file is a ftp or sftp file, get file content from cached file.
 			// remove ':' from protocol because cache file of remote files are
 			// stored as ftp102525465N i.e. protocol + id
+			// Cache files are local file:// URIs, so native file reading works
 			const cacheFilename = protocol.slice(0, -1) + this.id;
-			const cacheFile = Url.join(CACHE_STORAGE, cacheFilename);
-			fs = fsOperation(cacheFile);
-		} else {
-			fs = fsOperation(this.uri);
+			const cacheFileUri = Url.join(CACHE_STORAGE, cacheFilename);
+
+			try {
+				return await system.compareFileText(cacheFileUri, this.encoding, text);
+			} catch (error) {
+				console.error("Native compareFileText failed:", error);
+				return false;
+			}
 		}
 
-		try {
-			const oldText = await fs.readFile(this.encoding);
-			const text = this.session.getValue();
+		if (/^(file|content):/.test(protocol)) {
+			// file:// and content:// URIs can be handled by native Android code
+			// Native reads file AND compares in background thread
+			try {
+				return await system.compareFileText(this.uri, this.encoding, text);
+			} catch (error) {
+				console.error("Native compareFileText failed:", error);
+				return false;
+			}
+		}
 
-			if (oldText.length !== text.length) return true;
-			return oldText !== text;
+		// native compares
+		try {
+			const fs = fsOperation(this.uri);
+			const oldText = await fs.readFile(this.encoding);
+
+			// Offload string comparison to background thread
+			return await system.compareTexts(oldText, text);
 		} catch (error) {
-			window.log("error", error);
+			console.error(error);
 			return false;
 		}
 	}

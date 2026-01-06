@@ -169,6 +169,8 @@ public class System extends CordovaPlugin {
             case "decode":
             case "encode":
             case "copyToUri":
+            case "compare-file-text":
+            case "compare-texts":
                 break;
             case "get-configuration":
                 getConfiguration(callbackContext);
@@ -505,6 +507,12 @@ public class System extends CordovaPlugin {
                             case "encode":
                                 encode(arg1, arg2, callbackContext);
                                 break;
+                            case "compare-file-text":
+                                compareFileText(arg1, arg2, arg3, callbackContext);
+                                break;
+                            case "compare-texts":
+                                compareTexts(arg1, arg2, callbackContext);
+                                break;
                             default:
                                 break;
                         }
@@ -611,6 +619,137 @@ public class System extends CordovaPlugin {
             byte[] bytes = new byte[byteBuffer.remaining()];
             byteBuffer.get(bytes);
             callback.success(bytes);
+        } catch (Exception e) {
+            callback.error(e.toString());
+        }
+    }
+
+    /**
+     * Compares file content with provided text.
+     * This method runs in a background thread to avoid blocking the UI.
+     * 
+     * @param fileUri The URI of the file to read (file:// or content://)
+     * @param encoding The character encoding to use when reading the file
+     * @param currentText The text to compare against the file content
+     * @param callback Returns 1 if texts are different, 0 if same
+     */
+    private void compareFileText(
+        String fileUri,
+        String encoding,
+        String currentText,
+        CallbackContext callback
+    ) {
+        try {
+            if (fileUri == null || fileUri.isEmpty()) {
+                callback.error("File URI is required");
+                return;
+            }
+
+            if (encoding == null || encoding.isEmpty()) {
+                encoding = "UTF-8";
+            }
+
+            if (!Charset.isSupported(encoding)) {
+                callback.error("Charset not supported: " + encoding);
+                return;
+            }
+
+            Uri uri = Uri.parse(fileUri);
+            InputStream inputStream = null;
+            String fileContent;
+
+            try {
+                // Handle both file:// and content:// URIs
+                if ("file".equalsIgnoreCase(uri.getScheme())) {
+                    File file = new File(uri.getPath());
+                    if (!file.exists()) {
+                        callback.error("File does not exist");
+                        return;
+                    }
+                    inputStream = new FileInputStream(file);
+                } else {
+                    inputStream = context.getContentResolver().openInputStream(uri);
+                }
+
+                if (inputStream == null) {
+                    callback.error("Cannot open file");
+                    return;
+                }
+
+                // Read file content with specified encoding
+                Charset charset = Charset.forName(encoding);
+                byte[] bytes = new byte[inputStream.available()];
+                int totalRead = 0;
+                int bytesRead;
+                
+                // Read in chunks to handle large files
+                java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                while ((bytesRead = inputStream.read(chunk)) != -1) {
+                    buffer.write(chunk, 0, bytesRead);
+                }
+                bytes = buffer.toByteArray();
+                
+                CharBuffer charBuffer = charset.decode(ByteBuffer.wrap(bytes));
+                fileContent = charBuffer.toString();
+
+            } finally {
+                if (inputStream != null) {
+                    try {
+                        inputStream.close();
+                    } catch (IOException ignored) {}
+                }
+            }
+
+            // check length first
+            if (fileContent.length() != currentText.length()) {
+                callback.success(1); // Changed
+                return;
+            }
+
+            // Full comparison
+            if (fileContent.equals(currentText)) {
+                callback.success(0); // Not changed
+            } else {
+                callback.success(1); // Changed
+            }
+
+        } catch (Exception e) {
+            callback.error(e.toString());
+        }
+    }
+
+    /**
+     * Compares two text strings.
+     * This method runs in a background thread to avoid blocking the UI
+     * for large string comparisons.
+     * 
+     * @param text1 First text to compare
+     * @param text2 Second text to compare
+     * @param callback Returns 1 if texts are different, 0 if same
+     */
+    private void compareTexts(
+        String text1,
+        String text2,
+        CallbackContext callback
+    ) {
+        try {
+            if (text1 == null) text1 = "";
+            if (text2 == null) text2 = "";
+
+            // check length first
+            if (text1.length() != text2.length()) {
+                callback.success(1); // Changed
+                return;
+            }
+
+            // Full comparison
+            if (text1.equals(text2)) {
+                callback.success(0); // Not changed
+            } else {
+                callback.success(1); // Changed
+            }
+
         } catch (Exception e) {
             callback.error(e.toString());
         }
