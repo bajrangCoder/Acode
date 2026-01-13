@@ -595,24 +595,33 @@ public class Ftp extends CordovaPlugin {
 
               ftp.setFileType(FTP.BINARY_FILE_TYPE);
 
-              InputStream inputStream = ftp.retrieveFileStream(path);
-              if (inputStream == null) {
-                Log.d(
-                  "FTP",
-                  "FTPClient (" + ftpId + ") path: " + path + " - not found"
-                );
-                callback.error("File not found.");
-                return;
+              // Delete existing cache file to prevent stale content
+              if (localFile.exists()) {
+                localFile.delete();
               }
 
-              FileOutputStream outputStream = new FileOutputStream(localFile);
-              byte[] buffer = new byte[1024];
-              int bytesRead = -1;
-              while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
+              try (
+                InputStream inputStream = ftp.retrieveFileStream(path)
+              ) {
+                if (inputStream == null) {
+                  Log.d(
+                    "FTP",
+                    "FTPClient (" + ftpId + ") path: " + path + " - not found"
+                  );
+                  callback.error("File not found.");
+                  return;
+                }
+
+                try (
+                  FileOutputStream outputStream = new FileOutputStream(localFile)
+                ) {
+                  byte[] buffer = new byte[1024];
+                  int bytesRead = -1;
+                  while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                  }
+                }
               }
-              outputStream.close();
-              inputStream.close();
 
               if (!ftp.completePendingCommand()) {
                 ftp.logout();
