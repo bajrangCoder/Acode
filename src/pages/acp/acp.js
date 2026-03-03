@@ -491,9 +491,10 @@ export default function AcpPageInclude() {
 
 	// ─── Event Handlers ───
 	function createTimelineElement(entry) {
+		const cwd = client.session?.cwd || $form.getValues().cwd || "";
 		switch (entry.type) {
 			case "message":
-				return ChatMessage({ message: entry.message });
+				return ChatMessage({ message: entry.message, cwd });
 			case "tool_call":
 				return ToolCallCard({ toolCall: entry.toolCall });
 			case "plan":
@@ -516,8 +517,12 @@ export default function AcpPageInclude() {
 		}
 
 		entries.forEach((entry) => {
+			const entryWithContext = {
+				...entry,
+				cwd: client.session?.cwd || $form.getValues().cwd || "",
+			};
 			if (timelineElements.has(entry.entryId)) {
-				timelineElements.get(entry.entryId).update(entry);
+				timelineElements.get(entry.entryId).update(entryWithContext);
 			} else {
 				const $entry = createTimelineElement(entry);
 				if (!$entry) return;
