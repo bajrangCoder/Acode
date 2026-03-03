@@ -487,14 +487,37 @@ export default function AcpPageInclude() {
 			elements.$cancelBtn.style.display = value ? "flex" : "none";
 		}
 		updateStatusDot(value ? "connecting" : "connected");
+		if (currentView === "chat") {
+			syncTimeline();
+		}
 	}
 
 	// ─── Event Handlers ───
+	function getActiveAgentMessageId() {
+		if (!isPrompting || !client.session) return null;
+
+		const messages = client.session.messages;
+		for (let index = messages.length - 1; index >= 0; index--) {
+			if (messages[index].role === "agent") {
+				return messages[index].id;
+			}
+		}
+
+		return null;
+	}
+
 	function createTimelineElement(entry) {
 		const cwd = client.session?.cwd || $form.getValues().cwd || "";
+		const activeAgentMessageId = getActiveAgentMessageId();
 		switch (entry.type) {
 			case "message":
-				return ChatMessage({ message: entry.message, cwd });
+				return ChatMessage({
+					message: entry.message,
+					cwd,
+					isResponding:
+						entry.message.role === "agent" &&
+						entry.message.id === activeAgentMessageId,
+				});
 			case "tool_call":
 				return ToolCallCard({ toolCall: entry.toolCall });
 			case "plan":
@@ -516,10 +539,15 @@ export default function AcpPageInclude() {
 			if ($empty) $empty.remove();
 		}
 
+		const activeAgentMessageId = getActiveAgentMessageId();
 		entries.forEach((entry) => {
 			const entryWithContext = {
 				...entry,
 				cwd: client.session?.cwd || $form.getValues().cwd || "",
+				isResponding:
+					entry.type === "message" &&
+					entry.message.role === "agent" &&
+					entry.message.id === activeAgentMessageId,
 			};
 			if (timelineElements.has(entry.entryId)) {
 				timelineElements.get(entry.entryId).update(entryWithContext);

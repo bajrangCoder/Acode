@@ -165,8 +165,13 @@ async function resolveExistingPath(candidates = []) {
 	return null;
 }
 
-export default function ChatMessage({ message, cwd = "" }) {
+export default function ChatMessage({
+	message,
+	cwd = "",
+	isResponding = false,
+}) {
 	let messageCwd = cwd;
+	let messageResponding = isResponding;
 
 	const $content = <div className="acp-message-content"></div>;
 	const $meta = <div className="acp-message-meta"></div>;
@@ -255,9 +260,20 @@ export default function ChatMessage({ message, cwd = "" }) {
 			hour: "2-digit",
 			minute: "2-digit",
 		});
-		$meta.textContent = message.streaming ? `${timeStr} · streaming` : timeStr;
+		$meta.innerHTML = "";
+		$meta.append(<span className="acp-message-time">{timeStr}</span>);
+		if (messageResponding) {
+			$meta.append(
+				<span className="acp-streaming-indicator">
+					<span className="acp-streaming-dot"></span>
+					<span className="acp-streaming-dot"></span>
+					<span className="acp-streaming-dot"></span>
+					<span className="acp-streaming-label">Responding</span>
+				</span>,
+			);
+		}
 		$role.textContent = message.role === "user" ? "You" : "Agent";
-		$el.classList.toggle("streaming", Boolean(message.streaming));
+		$el.classList.toggle("streaming", Boolean(messageResponding));
 	}
 
 	renderContent();
@@ -275,6 +291,7 @@ export default function ChatMessage({ message, cwd = "" }) {
 	$el.update = (msg) => {
 		message = msg.message || msg;
 		if (msg.cwd) messageCwd = msg.cwd;
+		if ("isResponding" in msg) messageResponding = Boolean(msg.isResponding);
 		renderContent();
 		renderMeta();
 	};
