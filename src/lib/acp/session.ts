@@ -30,6 +30,8 @@ export class ACPSession {
 	readonly timeline: TimelineEntry[] = [];
 	readonly toolCalls: Map<string, ToolCall> = new Map();
 	plan: Plan | null = null;
+	title: string | null = null;
+	updatedAt: string | null = null;
 
 	private agentTextBuffer = "";
 	private currentAgentMessageId: string | null = null;
@@ -101,6 +103,9 @@ export class ACPSession {
 				break;
 			case "plan":
 				this.handlePlan(update.entries);
+				break;
+			case "session_info_update":
+				this.handleSessionInfoUpdate(update);
 				break;
 		}
 	}
@@ -246,6 +251,18 @@ export class ACPSession {
 		}
 
 		this.emit("plan", this.plan);
+	}
+
+	private handleSessionInfoUpdate(update: {
+		title?: string | null;
+		updatedAt?: string | null;
+	}): void {
+		if ("title" in update) {
+			this.title = update.title ?? null;
+		}
+		if ("updatedAt" in update) {
+			this.updatedAt = update.updatedAt ?? null;
+		}
 	}
 
 	private nextMessageId(): string {

@@ -1,6 +1,9 @@
 import "./acp.scss";
 import Page from "components/page";
+import toast from "components/toast";
+import select from "dialogs/select";
 import { ACPClient } from "lib/acp/client";
+import acpHistory from "lib/acp/history";
 import { ConnectionState } from "lib/acp/models";
 import actionStack from "lib/actionStack";
 import helpers from "utils/helpers";
@@ -16,6 +19,8 @@ export default function AcpPageInclude() {
 
 	const client = new ACPClient();
 	let currentView = "connect";
+	let connectedUrl = "";
+	let currentSessionUrl = "";
 	const timelineElements = new Map();
 	let isPrompting = false;
 
@@ -28,33 +33,63 @@ export default function AcpPageInclude() {
 
 	// ─── Chat View ───
 	const $chatView = buildChatView();
+	const $historyBtn = (
+		<span
+			className="icon historyrestore"
+			title="Session history"
+			attr-action="open-history"
+		></span>
+	);
+	$page.header.append($historyBtn);
+	$page.addEventListener("click", handlePageClick);
 
 	// Start with connection form
 	$page.body = <main className="main scroll">{$form}</main>;
 
 	async function handleConnect({ url, cwd }) {
+		if (!url) return;
+
+		const nextCwd = cwd || "";
+		$form.setValues({ url, cwd: nextCwd });
 		$form.setConnecting(true);
 		setFormStatus("");
 
 		try {
 			setFormStatus("Connecting...");
-			await client.startSession({
-				url,
-				cwd: cwd || undefined,
-			});
+			await ensureReadyForUrl(url);
+			setFormStatus("Starting session...");
+			await client.newSession(nextCwd || undefined);
+			currentSessionUrl = url;
 			switchToChat(client.agentName);
+			saveCurrentSessionHistory();
+			syncTimeline();
 		} catch (err) {
 			$form.setConnecting(false);
 			setFormStatus(err.message || "Connection failed");
 		}
 	}
 
+	async function ensureReadyForUrl(url) {
+		if (client.state === ConnectionState.READY && connectedUrl === url) return;
+
+		if (client.state !== ConnectionState.DISCONNECTED) {
+			try {
+				await client.disconnect();
+			} catch {
+				/* ignore */
+			}
+		}
+
+		await client.connect({ type: "websocket", url });
+		await client.initialize();
+		connectedUrl = url;
+	}
+
 	function switchToChat(agentName) {
 		currentView = "chat";
 		timelineElements.clear();
 
-		const $agentNameEl = $chatView.querySelector(".acp-agent-name");
-		if ($agentNameEl) $agentNameEl.textContent = agentName;
+		setChatAgentName(agentName);
 
 		setPrompting(false);
 		updateStatusDot("connected");
@@ -63,8 +98,12 @@ export default function AcpPageInclude() {
 
 		const $messages = $chatView.querySelector(".acp-messages");
 		if ($messages) $messages.innerHTML = "";
+		ensureEmptyState();
 
 		// Back from chat → disconnect and return to connect form
+		if (actionStack.has("acp-chat")) {
+			actionStack.remove("acp-chat");
+		}
 		actionStack.push({
 			id: "acp-chat",
 			action: handleDisconnect,
@@ -81,6 +120,18 @@ export default function AcpPageInclude() {
 		actionStack.remove("acp-chat");
 
 		$page.body = <main className="main scroll">{$form}</main>;
+	}
+
+	function handlePageClick(e) {
+		const action = e.target?.getAttribute?.("action");
+		if (action === "open-history") {
+			void openSessionHistory();
+		}
+	}
+
+	function setChatAgentName(agentName) {
+		const $agentNameEl = $chatView.querySelector(".acp-agent-name");
+		if ($agentNameEl) $agentNameEl.textContent = agentName || "Agent";
 	}
 
 	function buildChatView() {
@@ -175,11 +226,12 @@ export default function AcpPageInclude() {
 			} catch (err) {
 				console.error("[ACP] Prompt error:", err);
 			} finally {
+				saveCurrentSessionHistory();
 				setPrompting(false, { $sendBtn, $cancelBtn });
 			}
 		}
 
-		return (
+		const $view = (
 			<div className="acp-chat-view">
 				<div className="acp-chat-header">
 					<div className="acp-header-left">
@@ -215,6 +267,21 @@ export default function AcpPageInclude() {
 				</div>
 			</div>
 		);
+
+		$view.ensureEmptyState = () => {
+			if ($messages.children.length > 0) return;
+			if ($emptyState.parentNode !== $view) {
+				$view.insertBefore($emptyState, $messages);
+			}
+		};
+
+		return $view;
+	}
+
+	function ensureEmptyState() {
+		if (typeof $chatView.ensureEmptyState === "function") {
+			$chatView.ensureEmptyState();
+		}
 	}
 
 	async function handleDisconnect() {
@@ -223,7 +290,162 @@ export default function AcpPageInclude() {
 		} catch {
 			/* ignore */
 		}
+		connectedUrl = "";
+		currentSessionUrl = "";
 		switchToConnect();
+	}
+
+	function getSessionPreview() {
+		const session = client.session;
+		if (!session) return "";
+
+		const userMessage = session.messages.find((message) => {
+			return message.role === "user";
+		});
+		const textBlock = userMessage?.content.find((block) => {
+			return block.type === "text";
+		});
+
+		if (!textBlock || textBlock.type !== "text") return "";
+		return textBlock.text.trim().slice(0, 120);
+	}
+
+	function getSessionLabel(entry) {
+		const title =
+			entry.title || entry.preview || `Session ${entry.sessionId.slice(0, 8)}`;
+		const meta = [
+			entry.agentName || "Agent",
+			entry.cwd || entry.url,
+			formatUpdatedAt(entry.updatedAt),
+		]
+			.filter(Boolean)
+			.join(" • ");
+		return `${title}<br><small>${meta}</small>`;
+	}
+
+	function formatUpdatedAt(value) {
+		if (!value) return "";
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return "";
+		return date.toLocaleString();
+	}
+
+	function getUpdatedAtTime(value) {
+		const parsed = Date.parse(value || "");
+		return Number.isNaN(parsed) ? 0 : parsed;
+	}
+
+	function saveCurrentSessionHistory() {
+		const session = client.session;
+		if (!session || !currentSessionUrl) return;
+
+		acpHistory.save({
+			sessionId: session.sessionId,
+			url: currentSessionUrl,
+			cwd: session.cwd || $form.getValues().cwd || "",
+			agentName: client.agentName,
+			title: session.title || "",
+			preview: getSessionPreview(),
+			updatedAt: session.updatedAt || new Date().toISOString(),
+		});
+	}
+
+	function getSessionHistoryEntries() {
+		return acpHistory.list().sort((a, b) => {
+			return getUpdatedAtTime(b.updatedAt) - getUpdatedAtTime(a.updatedAt);
+		});
+	}
+
+	async function openSessionHistory() {
+		const entries = getSessionHistoryEntries();
+		if (!entries.length) {
+			toast("No saved ACP sessions yet");
+			if (currentView === "connect") {
+				setFormStatus("No saved ACP sessions yet");
+			}
+			return;
+		}
+
+		try {
+			const selectedEntry = await select(
+				"ACP Session History",
+				entries.map((entry) => ({
+					value: entry,
+					text: getSessionLabel(entry),
+					icon:
+						currentSessionUrl &&
+						currentSessionUrl === entry.url &&
+						client.session?.sessionId === entry.sessionId
+							? "radio_button_checked"
+							: "historyrestore",
+					tailElement: tag("span", {
+						className: "icon clearclose",
+						dataset: {
+							action: "clear",
+						},
+					}),
+					ontailclick: () => {
+						acpHistory.remove({
+							sessionId: entry.sessionId,
+							url: entry.url,
+						});
+					},
+				})),
+				{
+					textTransform: false,
+				},
+			);
+
+			if (!selectedEntry) return;
+			await loadSelectedSession(selectedEntry);
+		} catch (error) {
+			if (!error) return;
+			console.error("[ACP] Failed to open session history:", error);
+			toast(error.message || "Failed to open session history");
+		}
+	}
+
+	async function loadSelectedSession(entry) {
+		const cwd = entry.cwd || $form.getValues().cwd || "";
+		if (!cwd) {
+			setFormStatus("This session is missing a working directory");
+			return;
+		}
+
+		$form.setValues({
+			url: entry.url,
+			cwd,
+		});
+		$form.setConnecting(true);
+		setFormStatus("");
+
+		try {
+			setFormStatus("Connecting...");
+			await ensureReadyForUrl(entry.url);
+			switchToChat(entry.agentName || client.agentName);
+			updateStatusDot("connecting");
+
+			await client.loadSession(entry.sessionId, cwd);
+			currentSessionUrl = entry.url;
+			setChatAgentName(entry.agentName || client.agentName);
+			saveCurrentSessionHistory();
+			syncTimeline();
+			updateStatusDot("connected");
+		} catch (error) {
+			console.error("[ACP] Failed to load session:", error);
+			try {
+				await client.disconnect();
+			} catch {
+				/* ignore */
+			}
+			connectedUrl = "";
+			currentSessionUrl = "";
+			switchToConnect();
+			setFormStatus(error.message || "Failed to load session");
+		} finally {
+			$form.setConnecting(false);
+			setPrompting(false);
+		}
 	}
 
 	function updateStatusDot(state) {
@@ -310,6 +532,7 @@ export default function AcpPageInclude() {
 		});
 
 		$messages.scrollTop = $messages.scrollHeight;
+		saveCurrentSessionHistory();
 	}
 
 	client.on("session_update", () => {
@@ -331,6 +554,10 @@ export default function AcpPageInclude() {
 	});
 
 	client.on("state_change", ({ newState }) => {
+		if (newState === ConnectionState.DISCONNECTED) {
+			connectedUrl = "";
+			currentSessionUrl = "";
+		}
 		if (currentView !== "chat") return;
 		if (newState === ConnectionState.DISCONNECTED) {
 			switchToConnect();

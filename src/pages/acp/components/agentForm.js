@@ -62,5 +62,15 @@ export default function AgentForm({ onConnect, statusMsg, isConnecting }) {
 		$status.textContent = msg || "";
 	};
 
+	$el.getValues = () => ({
+		url: $urlInput.value.trim(),
+		cwd: $cwdInput.value.trim(),
+	});
+
+	$el.setValues = ({ url = "", cwd = "" } = {}) => {
+		if (typeof url === "string" && url) $urlInput.value = url;
+		if (typeof cwd === "string") $cwdInput.value = cwd;
+	};
+
 	return $el;
 }

@@ -6,6 +6,7 @@ import {
 	type ContentBlock,
 	type Implementation,
 	type InitializeResponse as InitializeResult,
+	type ListSessionsResponse as ListSessionsResult,
 	type McpServer,
 	type NewSessionResponse as NewSessionResult,
 	type RequestPermissionRequest as PermissionRequest,
@@ -234,6 +235,57 @@ export class ACPClient {
 		this._session?.dispose();
 		this._session = new ACPSession(result.sessionId, cwd || "");
 		return this._session;
+	}
+
+	async loadSession(
+		sessionId: string,
+		cwd: string,
+		mcpServers?: McpServer[],
+	): Promise<ACPSession> {
+		this.ensureReady();
+
+		if (!this._agentCapabilities?.loadSession) {
+			throw new Error("This agent does not support session/load");
+		}
+
+		const connection = this.getConnection();
+		const session = new ACPSession(sessionId, cwd);
+
+		this._session?.dispose();
+		this._session = session;
+
+		try {
+			await this.runWhileConnected(
+				connection.loadSession({
+					sessionId,
+					cwd,
+					mcpServers: mcpServers ?? [],
+				}),
+			);
+			return session;
+		} catch (error) {
+			if (this._session === session) {
+				session.dispose();
+				this._session = null;
+			}
+			throw error;
+		}
+	}
+
+	async unstableListSessions(cwd?: string): Promise<ListSessionsResult> {
+		this.ensureReady();
+
+		if (!this._agentCapabilities?.sessionCapabilities?.list) {
+			throw new Error("This agent does not support session/list");
+		}
+
+		const connection = this.getConnection();
+
+		return (await this.runWhileConnected(
+			connection.unstable_listSessions({
+				cwd: cwd || undefined,
+			}),
+		)) as ListSessionsResult;
 	}
 
 	async startSession({
