@@ -9,6 +9,7 @@ import select from "dialogs/select";
 import actions from "handlers/quickTools";
 import recents from "lib/recents";
 import About from "pages/about";
+import AcpPage from "pages/acp";
 import FileBrowser from "pages/fileBrowser";
 import plugins from "pages/plugins";
 import Problems from "pages/problems/problems";
@@ -194,6 +195,10 @@ export default {
 
 			case "about":
 				About();
+				break;
+
+			case "acp":
+				AcpPage();
 				break;
 
 			default:

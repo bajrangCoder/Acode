@@ -1,0 +1,1242 @@
+.acp-page {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+
+	.main.scroll {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+		padding: 0;
+		width: 100%;
+	}
+
+	/* ── Connection Form ── */
+	.acp-connect-view {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		padding: 16px;
+		box-sizing: border-box;
+		overflow-y: auto;
+
+		.acp-connect-header {
+			text-align: center;
+			margin-bottom: 24px;
+			padding-top: 32px;
+
+			.acp-logo {
+				width: 56px;
+				height: 56px;
+				border-radius: 14px;
+				background: linear-gradient(
+					135deg,
+					var(--active-color),
+					var(--primary-color)
+				);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				margin: 0 auto 14px;
+				font-size: 1.5rem;
+				color: var(--primary-text-color);
+				box-shadow: 0 4px 16px
+					color-mix(in srgb, var(--active-color), transparent 70%);
+			}
+
+			h2 {
+				font-size: 1.2rem;
+				font-weight: 600;
+				color: var(--secondary-text-color);
+				margin: 0 0 4px 0;
+			}
+
+			.acp-subtitle {
+				font-size: 0.8rem;
+				opacity: 0.5;
+				color: var(--secondary-text-color);
+			}
+		}
+
+		.acp-form {
+			display: flex;
+			flex-direction: column;
+			gap: 16px;
+			max-width: 400px;
+			width: 100%;
+			margin: 0 auto;
+
+			.acp-field {
+				display: flex;
+				flex-direction: column;
+				gap: 5px;
+
+				label {
+					font-size: 0.72rem;
+					font-weight: 600;
+					text-transform: uppercase;
+					letter-spacing: 0.6px;
+					opacity: 0.5;
+					color: var(--secondary-text-color);
+				}
+
+				input {
+					height: 44px;
+					border-radius: 10px;
+					border: 1px solid var(--border-color);
+					background: var(--popup-background-color);
+					color: var(--popup-text-color);
+					padding: 0 14px;
+					font-size: 0.88rem;
+					transition:
+						border-color 0.2s,
+						box-shadow 0.2s;
+
+					&:focus {
+						border-color: var(--active-color);
+						box-shadow: 0 0 0 3px
+							color-mix(in srgb, var(--active-color), transparent 85%);
+					}
+				}
+			}
+
+			.acp-connect-btn {
+				height: 46px;
+				border-radius: 10px;
+				border: none;
+				background: var(--button-background-color);
+				color: var(--button-text-color);
+				font-size: 0.92rem;
+				font-weight: 600;
+				cursor: pointer;
+				transition:
+					background-color 0.2s,
+					transform 0.1s;
+				margin-top: 8px;
+
+				&:active {
+					background: var(--button-active-color);
+					transform: scale(0.98);
+				}
+
+				&:disabled {
+					opacity: 0.4;
+					pointer-events: none;
+				}
+
+				&.connecting {
+					position: relative;
+					color: transparent;
+
+					&::after {
+						content: "";
+						position: absolute;
+						top: 50%;
+						left: 50%;
+						width: 18px;
+						height: 18px;
+						margin: -9px 0 0 -9px;
+						border: 2px solid var(--button-text-color);
+						border-top-color: transparent;
+						border-radius: 50%;
+						animation: acp-spin 0.6s linear infinite;
+					}
+				}
+			}
+		}
+
+		.acp-status-msg {
+			text-align: center;
+			margin-top: 12px;
+			font-size: 0.8rem;
+			color: var(--error-text-color);
+			min-height: 20px;
+		}
+	}
+
+	/* ── Chat View ── */
+	.acp-chat-view {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+
+		/* ── Header ── */
+		.acp-chat-header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			height: 56px;
+			min-height: 56px;
+			padding: 0 14px;
+			background: color-mix(
+				in srgb,
+				var(--secondary-color),
+				var(--secondary-text-color) 3%
+			);
+			border-bottom: 1px solid var(--border-color);
+
+			.acp-header-left {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.acp-agent-avatar {
+				position: relative;
+				width: 38px;
+				height: 38px;
+				border-radius: 10px;
+				background: linear-gradient(
+					135deg,
+					var(--active-color),
+					var(--primary-color)
+				);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				box-shadow: 0 2px 12px
+					color-mix(in srgb, var(--active-color), transparent 70%);
+
+				.acp-avatar-icon {
+					font-size: 1.1rem;
+					line-height: 1;
+				}
+
+				.acp-status-indicator {
+					position: absolute;
+					bottom: -2px;
+					right: -2px;
+					width: 12px;
+					height: 12px;
+
+					.acp-status-ping {
+						position: absolute;
+						inset: 0;
+						border-radius: 50%;
+						opacity: 0;
+
+						&.active {
+							animation: acp-ping 1.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+							opacity: 0.6;
+						}
+
+						&.connected {
+							background: #4caf50;
+						}
+						&.working {
+							background: var(--active-color);
+						}
+					}
+
+					.acp-status-dot {
+						position: relative;
+						display: block;
+						width: 12px;
+						height: 12px;
+						border-radius: 50%;
+						border: 2px solid var(--secondary-color);
+						background: color-mix(
+							in srgb,
+							var(--secondary-text-color),
+							transparent 60%
+						);
+						transition: background 0.3s;
+
+						&.connected {
+							background: #4caf50;
+						}
+						&.working {
+							background: var(--active-color);
+						}
+						&.error {
+							background: var(--danger-color);
+						}
+					}
+				}
+			}
+
+			.acp-header-info {
+				display: flex;
+				flex-direction: column;
+				gap: 1px;
+
+				.acp-agent-name {
+					font-size: 0.88rem;
+					font-weight: 600;
+					color: var(--secondary-text-color);
+					line-height: 1.2;
+				}
+
+				.acp-status-label {
+					font-size: 0.72rem;
+					color: var(--secondary-text-color);
+					opacity: 0.5;
+					line-height: 1.2;
+				}
+			}
+
+			.acp-disconnect-btn {
+				width: 36px;
+				height: 36px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				background: none;
+				border: none;
+				border-radius: 10px;
+				color: var(--secondary-text-color);
+				opacity: 0.45;
+				font-size: 1.15rem;
+				cursor: pointer;
+				transition: all 0.2s;
+
+				&:active {
+					opacity: 1;
+					background: color-mix(
+						in srgb,
+						var(--secondary-text-color),
+						transparent 88%
+					);
+				}
+			}
+		}
+
+		/* ── Messages ── */
+		.acp-messages {
+			flex: 1;
+			min-height: 0;
+			overflow-y: auto;
+			-webkit-overflow-scrolling: touch;
+			padding: 16px;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+
+		/* ── Empty State ── */
+		.acp-empty-state {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			flex: 1;
+			padding: 32px 24px;
+			text-align: center;
+			gap: 14px;
+			animation: acp-fade-in 0.4s ease;
+
+			.acp-empty-icon {
+				width: 56px;
+				height: 56px;
+				border-radius: 12px;
+				background: linear-gradient(
+					135deg,
+					var(--active-color),
+					var(--primary-color)
+				);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 1.5rem;
+				color: var(--primary-text-color);
+				box-shadow: 0 6px 20px
+					color-mix(in srgb, var(--active-color), transparent 65%);
+			}
+
+			.acp-empty-title {
+				font-size: 1.05rem;
+				font-weight: 700;
+				color: var(--secondary-text-color);
+			}
+
+			.acp-empty-desc {
+				font-size: 0.82rem;
+				color: var(--secondary-text-color);
+				opacity: 0.45;
+				line-height: 1.55;
+				max-width: 260px;
+			}
+
+			.acp-suggestions {
+				display: flex;
+				flex-wrap: wrap;
+				justify-content: center;
+				gap: 8px;
+				margin-top: 6px;
+
+				.acp-suggestion {
+					padding: 8px 14px;
+					border-radius: 10px;
+					border: 1px solid var(--border-color);
+					background: var(--popup-background-color);
+					color: var(--secondary-text-color);
+					font-size: 0.78rem;
+					cursor: pointer;
+					transition: all 0.2s;
+
+					&:active {
+						background: var(--active-color);
+						color: var(--primary-text-color);
+						border-color: var(--active-color);
+					}
+				}
+			}
+		}
+
+		/* ── Input Area ── */
+		.acp-input-area {
+			padding: 12px 14px;
+			background: color-mix(
+				in srgb,
+				var(--secondary-color),
+				var(--secondary-text-color) 3%
+			);
+			border-top: 1px solid var(--border-color);
+
+			.acp-input-wrapper {
+				display: flex;
+				align-items: flex-end;
+				gap: 6px;
+				border: 1.5px solid
+					color-mix(in srgb, var(--border-color), transparent 30%);
+				border-radius: 16px;
+				background: color-mix(
+					in srgb,
+					var(--popup-background-color),
+					var(--secondary-color) 40%
+				);
+				padding: 4px 4px 4px 12px;
+				transition:
+					border-color 0.2s,
+					box-shadow 0.2s;
+
+				&:focus-within {
+					border-color: color-mix(
+						in srgb,
+						var(--active-color),
+						transparent 50%
+					);
+					box-shadow: 0 0 0 2px
+						color-mix(in srgb, var(--active-color), transparent 92%);
+				}
+			}
+
+			textarea {
+				flex: 1;
+				min-height: 40px;
+				max-height: 128px;
+				resize: none;
+				border: none;
+				background: transparent;
+				color: var(--popup-text-color);
+				padding: 10px 0;
+				font-size: 0.88rem;
+				font-family: inherit;
+				line-height: 1.4;
+				outline: none;
+			}
+
+			.acp-attach-btn {
+				width: 32px;
+				height: 32px;
+				border-radius: 8px;
+				border: none;
+				background: none;
+				color: var(--secondary-text-color);
+				opacity: 0.35;
+				font-size: 1.1rem;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				flex-shrink: 0;
+				margin-bottom: 4px;
+				transition: opacity 0.15s;
+
+				&:active {
+					opacity: 0.7;
+				}
+			}
+
+			.acp-send-btn,
+			.acp-cancel-btn {
+				width: 36px;
+				height: 36px;
+				border-radius: 10px;
+				border: none;
+				font-size: 0.88rem;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: all 0.15s;
+				flex-shrink: 0;
+				margin-bottom: 2px;
+			}
+
+			.acp-send-btn {
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 20%
+				);
+				color: var(--secondary-color);
+
+				&:active {
+					transform: scale(0.92);
+					opacity: 0.85;
+				}
+
+				&:disabled {
+					opacity: 0.15;
+					pointer-events: none;
+				}
+			}
+
+			.acp-cancel-btn {
+				background: var(--danger-color);
+				color: var(--danger-text-color);
+
+				&:active {
+					transform: scale(0.92);
+					opacity: 0.8;
+				}
+			}
+		}
+	}
+
+	/* ── Chat Message ── */
+	.acp-message {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		flex-shrink: 0;
+		animation: acp-slide-in 0.25s ease;
+
+		.acp-message-role {
+			font-size: 0.65rem;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			opacity: 0.35;
+			color: var(--secondary-text-color);
+			margin-bottom: 3px;
+			padding: 0 2px;
+		}
+
+		&.user {
+			align-self: stretch;
+
+			.acp-message-content {
+				background: color-mix(
+					in srgb,
+					var(--secondary-color),
+					var(--secondary-text-color) 10%
+				);
+				border: 1px solid
+					color-mix(in srgb, var(--border-color), transparent 20%);
+				color: var(--secondary-text-color);
+				border-radius: 12px;
+				padding: 12px 16px;
+			}
+
+			.acp-message-role,
+			.acp-message-meta {
+				text-align: right;
+			}
+		}
+
+		&.agent {
+			align-self: stretch;
+
+			.acp-message-content {
+				background: color-mix(
+					in srgb,
+					var(--popup-background-color),
+					var(--secondary-text-color) 4%
+				);
+				border: 1px solid var(--border-color);
+				color: var(--secondary-text-color);
+				border-radius: 12px;
+				padding: 12px 16px;
+			}
+		}
+
+		.acp-message-content {
+			font-size: 0.88rem;
+			line-height: 1.6;
+			word-break: break-word;
+			overflow-wrap: anywhere;
+			white-space: pre-wrap;
+			min-width: 0;
+			overflow: hidden;
+			user-select: text;
+			-webkit-user-select: text;
+			box-shadow: 0 1px 3px
+				color-mix(in srgb, var(--box-shadow-color), transparent 50%);
+
+			strong {
+				font-weight: 600;
+			}
+
+			code {
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 90%
+				);
+				border: 1px solid
+					color-mix(in srgb, var(--border-color), transparent 40%);
+				padding: 1px 5px;
+				border-radius: 4px;
+				font-size: 0.84em;
+				font-family: var(--editor-font-family, monospace);
+			}
+
+			pre {
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 92%
+				);
+				padding: 10px 12px;
+				border-radius: 8px;
+				overflow-x: auto;
+				-webkit-overflow-scrolling: touch;
+				margin: 8px 0;
+				font-size: 0.82em;
+				max-width: 100%;
+				box-sizing: border-box;
+
+				code {
+					background: none;
+					border: none;
+					padding: 0;
+				}
+			}
+		}
+
+		&.streaming {
+			.acp-message-content::after {
+				content: "";
+				display: inline-block;
+				width: 2px;
+				height: 1em;
+				margin-left: 2px;
+				background: var(--active-color);
+				animation: acp-blink 0.8s step-end infinite;
+				vertical-align: text-bottom;
+			}
+		}
+
+		.acp-message-meta {
+			font-size: 0.65rem;
+			opacity: 0.35;
+			margin-top: 4px;
+			padding: 0 2px;
+			color: var(--secondary-text-color);
+		}
+	}
+
+	/* ── Tool Call Card ── */
+	.acp-tool-call {
+		border-radius: 12px;
+		margin: 2px 0;
+		overflow: hidden;
+		background: color-mix(
+			in srgb,
+			var(--popup-background-color),
+			var(--secondary-text-color) 3%
+		);
+		border: 1px solid var(--border-color);
+		align-self: stretch;
+		min-width: 0;
+		flex-shrink: 0;
+		animation: acp-slide-in 0.25s ease;
+		transition: border-color 0.3s;
+
+		.acp-tool-header {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 12px 14px;
+			cursor: pointer;
+			transition: background 0.15s;
+
+			&:active {
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 94%
+				);
+			}
+
+			.acp-tool-spinner {
+				width: 20px;
+				height: 20px;
+				flex-shrink: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 0;
+				color: var(--active-color);
+
+				&::after {
+					content: "";
+					display: block;
+					width: 16px;
+					height: 16px;
+					border: 2px solid var(--active-color);
+					border-top-color: transparent;
+					border-radius: 50%;
+					box-sizing: border-box;
+				}
+
+				&.spinning::after {
+					animation: acp-spin 0.8s linear infinite;
+				}
+
+				&.completed {
+					font-size: 0.92rem;
+					color: #4caf50;
+					&::after {
+						display: none;
+					}
+				}
+
+				&.failed {
+					font-size: 0.92rem;
+					color: var(--danger-color);
+					&::after {
+						display: none;
+					}
+				}
+			}
+
+			.acp-tool-info {
+				flex: 1;
+				min-width: 0;
+
+				.acp-tool-title {
+					font-size: 0.84rem;
+					font-weight: 500;
+					color: var(--secondary-text-color);
+					overflow: hidden;
+					text-overflow: ellipsis;
+					white-space: nowrap;
+					display: block;
+				}
+
+				.acp-tool-kind {
+					font-size: 0.7rem;
+					opacity: 0.45;
+					color: var(--secondary-text-color);
+					margin-top: 2px;
+					font-family: var(--editor-font-family, monospace);
+					overflow: hidden;
+					text-overflow: ellipsis;
+					white-space: nowrap;
+				}
+			}
+
+			.acp-tool-chevron {
+				font-size: 0.72rem;
+				opacity: 0.35;
+				color: var(--secondary-text-color);
+				transition: transform 0.2s;
+				flex-shrink: 0;
+
+				&.open {
+					transform: rotate(180deg);
+				}
+			}
+		}
+
+		.acp-tool-body {
+			display: none;
+			padding: 0 14px 14px;
+			user-select: text;
+			-webkit-user-select: text;
+
+			&.open {
+				display: block;
+				border-top: 1px solid var(--border-color);
+			}
+
+			.acp-tool-content {
+				font-size: 0.76rem;
+				white-space: pre-wrap;
+				word-break: break-word;
+				overflow-wrap: anywhere;
+				color: var(--secondary-text-color);
+				opacity: 0.75;
+				max-height: 200px;
+				overflow-y: auto;
+				-webkit-overflow-scrolling: touch;
+				margin-top: 10px;
+				font-family: var(--editor-font-family, monospace);
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 94%
+				);
+				border-radius: 8px;
+				padding: 10px 12px;
+			}
+
+			.acp-tool-locations {
+				margin-top: 8px;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 4px;
+
+				.acp-tool-location {
+					font-size: 0.7rem;
+					padding: 3px 8px;
+					border-radius: 8px;
+					background: color-mix(
+						in srgb,
+						var(--link-text-color),
+						transparent 88%
+					);
+					color: var(--link-text-color);
+					cursor: pointer;
+					font-family: var(--editor-font-family, monospace);
+				}
+			}
+
+			.acp-tool-section {
+				margin-top: 10px;
+
+				.acp-tool-section-title {
+					font-size: 0.65rem;
+					font-weight: 700;
+					letter-spacing: 0.06em;
+					text-transform: uppercase;
+					opacity: 0.4;
+					color: var(--secondary-text-color);
+					margin-bottom: 4px;
+				}
+			}
+		}
+
+		.acp-tool-meta {
+			padding: 0 14px 10px;
+			font-size: 0.65rem;
+			color: var(--secondary-text-color);
+			opacity: 0.35;
+		}
+	}
+
+	/* ── Plan ── */
+	.acp-plan {
+		border: 1px solid var(--border-color);
+		border-radius: 12px;
+		overflow: hidden;
+		margin: 2px 0;
+		background: color-mix(
+			in srgb,
+			var(--popup-background-color),
+			var(--secondary-text-color) 3%
+		);
+		flex-shrink: 0;
+		animation: acp-slide-in 0.25s ease;
+		align-self: stretch;
+
+		.acp-plan-header {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 10px 14px;
+			background: color-mix(
+				in srgb,
+				var(--secondary-text-color),
+				transparent 94%
+			);
+			border-bottom: 1px solid var(--border-color);
+
+			.acp-plan-icon {
+				font-size: 0.82rem;
+				opacity: 0.45;
+				color: var(--secondary-text-color);
+			}
+
+			.acp-plan-title {
+				font-size: 0.72rem;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.6px;
+				opacity: 0.5;
+				color: var(--secondary-text-color);
+				flex: 1;
+			}
+
+			.acp-plan-time {
+				font-size: 0.65rem;
+				opacity: 0.35;
+				color: var(--secondary-text-color);
+			}
+		}
+
+		.acp-plan-entries {
+			padding: 12px 14px;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		}
+
+		.acp-plan-entry {
+			display: flex;
+			align-items: flex-start;
+			gap: 10px;
+			font-size: 0.82rem;
+			color: var(--secondary-text-color);
+
+			.acp-plan-status-icon {
+				flex-shrink: 0;
+				width: 16px;
+				height: 16px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				margin-top: 2px;
+				border-radius: 4px;
+				border: 1px solid var(--border-color);
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 96%
+				);
+				font-size: 0;
+				transition: all 0.3s;
+
+				&.pending {
+					&::after {
+						content: "";
+						width: 5px;
+						height: 5px;
+						border-radius: 50%;
+						background: color-mix(
+							in srgb,
+							var(--secondary-text-color),
+							transparent 70%
+						);
+					}
+				}
+
+				&.in_progress {
+					border-color: color-mix(
+						in srgb,
+						var(--active-color),
+						transparent 40%
+					);
+					background: color-mix(in srgb, var(--active-color), transparent 85%);
+					box-shadow: 0 0 8px
+						color-mix(in srgb, var(--active-color), transparent 70%);
+
+					&::after {
+						content: "";
+						width: 5px;
+						height: 5px;
+						border-radius: 50%;
+						background: var(--active-color);
+						animation: acp-pulse 1.2s ease infinite;
+					}
+				}
+
+				&.completed {
+					border-color: var(--active-color);
+					background: var(--active-color);
+					font-size: 0.62rem;
+					color: var(--primary-text-color);
+					font-weight: 700;
+				}
+			}
+
+			.acp-plan-content {
+				flex: 1;
+				line-height: 1.4;
+				transition: all 0.3s;
+			}
+
+			&.step-done .acp-plan-content {
+				text-decoration: line-through;
+				opacity: 0.4;
+			}
+
+			.acp-plan-priority {
+				font-size: 0.62rem;
+				padding: 2px 6px;
+				border-radius: 6px;
+				text-transform: uppercase;
+				font-weight: 700;
+
+				&.high {
+					background: color-mix(in srgb, var(--danger-color), transparent 88%);
+					color: var(--danger-color);
+				}
+				&.medium {
+					background: color-mix(
+						in srgb,
+						var(--error-text-color),
+						transparent 88%
+					);
+					color: var(--error-text-color);
+				}
+				&.low {
+					background: color-mix(
+						in srgb,
+						var(--secondary-text-color),
+						transparent 88%
+					);
+					color: var(--secondary-text-color);
+					opacity: 0.6;
+				}
+			}
+		}
+	}
+
+	/* ── Permission Card (Inline) ── */
+	.acp-permission-card {
+		border-radius: 12px;
+		overflow: hidden;
+		margin: 2px 0;
+		border: 1px solid
+			color-mix(in srgb, var(--error-text-color), transparent 65%);
+		background: color-mix(
+			in srgb,
+			var(--popup-background-color),
+			var(--secondary-text-color) 3%
+		);
+		flex-shrink: 0;
+		animation: acp-slide-in 0.25s ease;
+		align-self: stretch;
+		transition: border-color 0.3s;
+
+		&.resolved-approved {
+			border-color: color-mix(in srgb, #4caf50, transparent 65%);
+
+			.acp-permission-header {
+				background: color-mix(in srgb, #4caf50, transparent 88%);
+			}
+			.acp-permission-indicator {
+				background: #4caf50 !important;
+				animation: none !important;
+				box-shadow: none !important;
+			}
+			.acp-permission-label {
+				color: #4caf50 !important;
+			}
+			.acp-permission-chevron {
+				color: #4caf50 !important;
+			}
+		}
+
+		&.resolved-denied {
+			border-color: color-mix(in srgb, var(--danger-color), transparent 65%);
+
+			.acp-permission-header {
+				background: color-mix(in srgb, var(--danger-color), transparent 88%);
+			}
+			.acp-permission-indicator {
+				background: var(--danger-color) !important;
+				animation: none !important;
+				box-shadow: none !important;
+			}
+			.acp-permission-label {
+				color: var(--danger-color) !important;
+			}
+			.acp-permission-chevron {
+				color: var(--danger-color) !important;
+			}
+		}
+
+		.acp-permission-header {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 12px 14px;
+			background: color-mix(in srgb, var(--error-text-color), transparent 88%);
+			cursor: pointer;
+			transition: background 0.15s;
+
+			.acp-permission-indicator {
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: var(--error-text-color);
+				flex-shrink: 0;
+				animation: acp-pulse 1.5s ease infinite;
+				box-shadow: 0 0 8px
+					color-mix(in srgb, var(--error-text-color), transparent 40%);
+			}
+
+			.acp-permission-label {
+				flex: 1;
+				font-size: 0.82rem;
+				font-weight: 600;
+				color: var(--error-text-color);
+			}
+
+			.acp-permission-chevron {
+				font-size: 0.72rem;
+				color: var(--error-text-color);
+				opacity: 0.6;
+				transition: transform 0.2s;
+				flex-shrink: 0;
+
+				&.collapsed {
+					transform: rotate(-90deg);
+				}
+			}
+		}
+
+		.acp-permission-content {
+			padding: 14px;
+			border-top: 1px solid
+				color-mix(in srgb, var(--error-text-color), transparent 85%);
+
+			&.hidden {
+				display: none;
+			}
+
+			.acp-permission-tool-title {
+				font-size: 0.88rem;
+				font-weight: 500;
+				color: var(--secondary-text-color);
+				margin-bottom: 4px;
+				line-height: 1.45;
+			}
+
+			.acp-permission-kind-badge {
+				display: inline-flex;
+				padding: 3px 8px;
+				border-radius: 8px;
+				margin-bottom: 12px;
+				font-size: 0.68rem;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+				background: color-mix(in srgb, var(--active-color), transparent 85%);
+				color: var(--active-color);
+			}
+
+			.acp-permission-actions {
+				display: flex;
+				gap: 10px;
+
+				button {
+					flex: 1;
+					height: 40px;
+					border-radius: 12px;
+					font-size: 0.84rem;
+					font-weight: 600;
+					cursor: pointer;
+					transition: all 0.15s;
+					border: none;
+
+					&:disabled {
+						opacity: 0.5;
+						pointer-events: none;
+					}
+
+					&:active {
+						transform: scale(0.97);
+					}
+
+					&.deny {
+						background: color-mix(
+							in srgb,
+							var(--secondary-text-color),
+							transparent 88%
+						);
+						color: var(--secondary-text-color);
+						border: 1px solid var(--border-color);
+					}
+
+					&.approve {
+						background: var(--error-text-color);
+						color: #fff;
+						box-shadow: 0 2px 8px
+							color-mix(in srgb, var(--error-text-color), transparent 60%);
+					}
+
+					&.approved-state {
+						background: #4caf50;
+						color: #fff;
+					}
+
+					&.denied-state {
+						background: color-mix(
+							in srgb,
+							var(--danger-color),
+							transparent 85%
+						);
+						color: var(--danger-color);
+						border: 1px solid
+							color-mix(in srgb, var(--danger-color), transparent 70%);
+					}
+				}
+			}
+		}
+	}
+}
+
+/* ── Animations ── */
+@keyframes acp-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes acp-ping {
+	75%,
+	100% {
+		transform: scale(2.2);
+		opacity: 0;
+	}
+}
+
+@keyframes acp-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.4;
+	}
+}
+
+@keyframes acp-blink {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
+}
+
+@keyframes acp-slide-in {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes acp-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}

@@ -107,6 +107,7 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.14.1",
     "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/commands": "^6.10.0",
     "@codemirror/lang-cpp": "^6.0.3",
