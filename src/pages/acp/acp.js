@@ -235,13 +235,6 @@ export default function AcpPageInclude() {
 			<div className="acp-chat-view">
 				<div className="acp-chat-header">
 					<div className="acp-header-left">
-						<div className="acp-agent-avatar">
-							<span className="acp-avatar-icon">⚡</span>
-							<span className="acp-status-indicator">
-								<span className="acp-status-ping"></span>
-								<span className="acp-status-dot"></span>
-							</span>
-						</div>
 						<div className="acp-header-info">
 							<span className="acp-agent-name">Agent</span>
 							<span className="acp-status-label">Connected</span>
@@ -452,23 +445,25 @@ export default function AcpPageInclude() {
 		const $dot = $chatView.querySelector(".acp-status-dot");
 		const $ping = $chatView.querySelector(".acp-status-ping");
 		const $label = $chatView.querySelector(".acp-status-label");
-		if (!$dot) return;
-
-		$dot.className = "acp-status-dot";
-		if ($ping) $ping.className = "acp-status-ping";
+		if ($dot) {
+			$dot.className = "acp-status-dot";
+		}
+		if ($ping) {
+			$ping.className = "acp-status-ping";
+		}
 
 		if (state === "connected") {
-			$dot.classList.add("connected");
+			if ($dot) $dot.classList.add("connected");
 			if ($ping) $ping.classList.add("connected");
 			if ($label) $label.textContent = "Connected";
 		} else if (state === "connecting") {
-			$dot.classList.add("working");
+			if ($dot) $dot.classList.add("working");
 			if ($ping) {
 				$ping.classList.add("active", "working");
 			}
 			if ($label) $label.textContent = "Working…";
 		} else if (state === "error") {
-			$dot.classList.add("error");
+			if ($dot) $dot.classList.add("error");
 			if ($label) $label.textContent = "Error";
 		}
 	}
