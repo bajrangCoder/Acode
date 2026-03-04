@@ -251,11 +251,14 @@ export default function AcpPageInclude() {
 				{$emptyState}
 				{$messages}
 				<div className="acp-input-area">
-					<div className="acp-input-wrapper">
-						{$attachBtn}
+					<div className="acp-input-container">
 						{$textarea}
-						{$sendBtn}
-						{$cancelBtn}
+						<div className="acp-input-toolbar">
+							{$attachBtn}
+							<div className="acp-toolbar-spacer"></div>
+							{$sendBtn}
+							{$cancelBtn}
+						</div>
 					</div>
 				</div>
 			</div>
