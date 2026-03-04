@@ -620,7 +620,6 @@
 			gap: 8px;
 			flex-wrap: wrap;
 			font-size: 0.65rem;
-			opacity: 0.35;
 			margin-top: 4px;
 			padding: 0 2px;
 			color: var(--secondary-text-color);
@@ -845,12 +844,6 @@
 			}
 		}
 
-		.acp-tool-meta {
-			padding: 0 14px 10px;
-			font-size: 0.65rem;
-			color: var(--secondary-text-color);
-			opacity: 0.35;
-		}
 	}
 
 	/* ── Plan ── */
@@ -896,11 +889,6 @@
 				flex: 1;
 			}
 
-			.acp-plan-time {
-				font-size: 0.65rem;
-				opacity: 0.35;
-				color: var(--secondary-text-color);
-			}
 		}
 
 		.acp-plan-entries {

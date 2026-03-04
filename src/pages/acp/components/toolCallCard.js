@@ -1,4 +1,4 @@
-import { ToolCallStatus, ToolKind } from "lib/acp/models";
+import { ToolCallStatus } from "lib/acp/models";
 
 function truncateTitle(title, maxLen = 40) {
 	if (!title) return "Tool call";
@@ -51,7 +51,6 @@ export default function ToolCallCard({ toolCall }) {
 			className={`acp-tool-chevron${isOpen.value ? " open" : ""} icon keyboard_arrow_down`}
 		></span>
 	);
-	const $meta = <div className="acp-tool-meta"></div>;
 	const $body = <div className="acp-tool-body"></div>;
 
 	function renderBody() {
@@ -117,18 +116,11 @@ export default function ToolCallCard({ toolCall }) {
 		}
 	}
 
-	function renderMeta() {
-		const parts = [];
-		if (toolCall.kind) parts.push(toolCall.kind);
-		if (toolCall.timestamp) {
-			parts.push(
-				new Date(toolCall.timestamp).toLocaleTimeString([], {
-					hour: "2-digit",
-					minute: "2-digit",
-				}),
-			);
-		}
-		$meta.textContent = parts.join(" · ");
+	function renderCardMeta() {
+		const timestamp = new Date(toolCall.timestamp);
+		$el.title = Number.isNaN(timestamp.getTime())
+			? ""
+			: timestamp.toLocaleString();
 	}
 
 	const $header = (
@@ -156,13 +148,12 @@ export default function ToolCallCard({ toolCall }) {
 		<div className="acp-tool-call">
 			{$header}
 			{$body}
-			{$meta}
 		</div>
 	);
 
 	$body.classList.toggle("open", isOpen.value);
 	$chevron.classList.toggle("open", isOpen.value);
-	renderMeta();
+	renderCardMeta();
 	if (isOpen.value) renderBody();
 
 	$el.update = (entry) => {
@@ -194,7 +185,7 @@ export default function ToolCallCard({ toolCall }) {
 			$body.classList.add("open");
 			$chevron.classList.add("open");
 		}
-		renderMeta();
+		renderCardMeta();
 		if (isOpen.value) renderBody();
 	};
 

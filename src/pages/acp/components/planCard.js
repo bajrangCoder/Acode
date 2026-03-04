@@ -2,7 +2,6 @@ import { PlanEntryStatus } from "lib/acp/models";
 
 export default function PlanCard({ plan }) {
 	const $entries = <div className="acp-plan-entries"></div>;
-	const $time = <div className="acp-plan-time"></div>;
 	const $title = (
 		<span className="acp-plan-title">
 			{`Agent Plan${plan.title ? ": " + plan.title : ""}`}
@@ -33,15 +32,11 @@ export default function PlanCard({ plan }) {
 
 	render();
 
-	function renderMeta() {
-		if (!plan.timestamp) {
-			$time.textContent = "";
-			return;
-		}
-		$time.textContent = new Date(plan.timestamp).toLocaleTimeString([], {
-			hour: "2-digit",
-			minute: "2-digit",
-		});
+	function renderCardMeta() {
+		const timestamp = new Date(plan.timestamp);
+		$el.title = Number.isNaN(timestamp.getTime())
+			? ""
+			: timestamp.toLocaleString();
 	}
 
 	const $el = (
@@ -49,19 +44,18 @@ export default function PlanCard({ plan }) {
 			<div className="acp-plan-header">
 				<span className="acp-plan-icon">☰</span>
 				{$title}
-				{$time}
 			</div>
 			{$entries}
 		</div>
 	);
 
-	renderMeta();
+	renderCardMeta();
 
 	$el.update = (entry) => {
 		plan = entry.plan || entry;
 		$title.textContent = `Agent Plan${plan.title ? ": " + plan.title : ""}`;
 		render();
-		renderMeta();
+		renderCardMeta();
 	};
 
 	return $el;

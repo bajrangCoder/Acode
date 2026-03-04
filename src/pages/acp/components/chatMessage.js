@@ -256,12 +256,7 @@ export default function ChatMessage({
 	}
 
 	function renderMeta() {
-		const timeStr = new Date(message.timestamp).toLocaleTimeString([], {
-			hour: "2-digit",
-			minute: "2-digit",
-		});
 		$meta.innerHTML = "";
-		$meta.append(<span className="acp-message-time">{timeStr}</span>);
 		if (messageResponding) {
 			$meta.append(
 				<span className="acp-streaming-indicator">
@@ -273,6 +268,11 @@ export default function ChatMessage({
 			);
 		}
 		$role.textContent = message.role === "user" ? "You" : "Agent";
+		$meta.hidden = $meta.childElementCount === 0;
+		const timestamp = new Date(message.timestamp);
+		$el.title = Number.isNaN(timestamp.getTime())
+			? ""
+			: timestamp.toLocaleString();
 		$el.classList.toggle("streaming", Boolean(messageResponding));
 	}
 
