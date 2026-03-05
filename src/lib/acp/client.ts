@@ -7,6 +7,7 @@ import {
 	type Implementation,
 	type InitializeResponse as InitializeResult,
 	type ListSessionsResponse as ListSessionsResult,
+	type LoadSessionResponse as LoadSessionResult,
 	type McpServer,
 	type NewSessionResponse as NewSessionResult,
 	type RequestPermissionRequest as PermissionRequest,
@@ -15,6 +16,9 @@ import {
 	type PromptResponse as PromptResult,
 	RequestError,
 	type RequestId,
+	type SessionConfigOption,
+	type SessionModelState,
+	type SessionModeState,
 	type SessionUpdate,
 } from "@agentclientprotocol/sdk";
 import { ConnectionState } from "./models";
@@ -45,6 +49,7 @@ const ACP_METHODS = {
 type ClientEventType =
 	| "state_change"
 	| "session_update"
+	| "session_controls_update"
 	| "error"
 	| "permission_request";
 
@@ -80,6 +85,9 @@ export class ACPClient {
 	private _agentCapabilities: AgentCapabilities | null = null;
 	private _agentInfo: Implementation | null = null;
 	private _session: ACPSession | null = null;
+	private _sessionModes: SessionModeState | null = null;
+	private _sessionModels: SessionModelState | null = null;
+	private _sessionConfigOptions: SessionConfigOption[] = [];
 
 	get state(): ConnectionState {
 		return this._state;
@@ -95,6 +103,18 @@ export class ACPClient {
 
 	get session(): ACPSession | null {
 		return this._session;
+	}
+
+	get sessionModes(): SessionModeState | null {
+		return this._sessionModes;
+	}
+
+	get sessionModels(): SessionModelState | null {
+		return this._sessionModels;
+	}
+
+	get sessionConfigOptions(): SessionConfigOption[] {
+		return this._sessionConfigOptions;
 	}
 
 	get agentName(): string {
@@ -232,6 +252,7 @@ export class ACPClient {
 			connection.newSession(params as never),
 		)) as NewSessionResult;
 
+		this.setSessionConfigurationState(result);
 		this._session?.dispose();
 		this._session = new ACPSession(result.sessionId, cwd || "");
 		return this._session;
@@ -255,18 +276,20 @@ export class ACPClient {
 		this._session = session;
 
 		try {
-			await this.runWhileConnected(
+			const result = (await this.runWhileConnected(
 				connection.loadSession({
 					sessionId,
 					cwd,
 					mcpServers: mcpServers ?? [],
 				}),
-			);
+			)) as LoadSessionResult;
+			this.setSessionConfigurationState(result);
 			return session;
 		} catch (error) {
 			if (this._session === session) {
 				session.dispose();
 				this._session = null;
+				this.clearSessionConfigurationState(true);
 			}
 			throw error;
 		}
@@ -336,6 +359,55 @@ export class ACPClient {
 
 	async sendTextPrompt(text: string): Promise<PromptResult> {
 		return await this.prompt([{ type: "text", text }]);
+	}
+
+	async setSessionMode(modeId: string): Promise<void> {
+		this.ensureReady();
+		const sessionId = this.ensureSessionId();
+		const connection = this.getConnection();
+
+		await this.runWhileConnected(
+			connection.setSessionMode({
+				sessionId,
+				modeId,
+			}),
+		);
+		this.updateSessionModeId(modeId);
+	}
+
+	async setSessionModel(modelId: string): Promise<void> {
+		this.ensureReady();
+		const sessionId = this.ensureSessionId();
+		const connection = this.getConnection();
+
+		await this.runWhileConnected(
+			connection.unstable_setSessionModel({
+				sessionId,
+				modelId,
+			}),
+		);
+		this.updateSessionModelId(modelId);
+	}
+
+	async setSessionConfigOption(configId: string, value: string): Promise<void> {
+		this.ensureReady();
+		const sessionId = this.ensureSessionId();
+		const connection = this.getConnection();
+
+		const result = await this.runWhileConnected(
+			connection.setSessionConfigOption({
+				sessionId,
+				configId,
+				value,
+			}),
+		);
+
+		if (result.configOptions) {
+			this.setSessionConfigOptions(result.configOptions);
+			return;
+		}
+
+		this.updateSessionConfigOptionValue(configId, value);
 	}
 
 	cancel(): void {
@@ -427,6 +499,7 @@ export class ACPClient {
 		update: SessionUpdate;
 	}): Promise<void> {
 		if (this._session && sessionId === this._session.sessionId) {
+			this.handleSessionControlUpdate(update);
 			this._session.handleSessionUpdate(update);
 			this.emit("session_update", update);
 		}
@@ -510,11 +583,144 @@ export class ACPClient {
 		}
 	}
 
+	private setSessionConfigurationState({
+		modes,
+		models,
+		configOptions,
+	}: {
+		modes?: SessionModeState | null;
+		models?: SessionModelState | null;
+		configOptions?: SessionConfigOption[] | null;
+	}): void {
+		this._sessionModes = modes ?? null;
+		this._sessionModels = models ?? null;
+		this._sessionConfigOptions = this.normalizeConfigOptions(configOptions);
+		this.emitSessionControlsUpdate();
+	}
+
+	private setSessionConfigOptions(
+		configOptions: SessionConfigOption[] | null | undefined,
+	): void {
+		this._sessionConfigOptions = this.normalizeConfigOptions(configOptions);
+		this.emitSessionControlsUpdate();
+	}
+
+	private updateSessionModeId(modeId: string): void {
+		if (!this._sessionModes || this._sessionModes.currentModeId === modeId)
+			return;
+
+		this._sessionModes = {
+			...this._sessionModes,
+			currentModeId: modeId,
+		};
+		this.emitSessionControlsUpdate();
+	}
+
+	private updateSessionModelId(modelId: string): void {
+		if (
+			!this._sessionModels ||
+			this._sessionModels.currentModelId === modelId
+		) {
+			return;
+		}
+
+		this._sessionModels = {
+			...this._sessionModels,
+			currentModelId: modelId,
+		};
+		this.emitSessionControlsUpdate();
+	}
+
+	private updateSessionConfigOptionValue(
+		configId: string,
+		value: string,
+	): void {
+		let didChange = false;
+		this._sessionConfigOptions = this._sessionConfigOptions.map((option) => {
+			if (option.id !== configId || option.currentValue === value) {
+				return option;
+			}
+			didChange = true;
+			return {
+				...option,
+				currentValue: value,
+			};
+		});
+
+		if (didChange) {
+			this.emitSessionControlsUpdate();
+		}
+	}
+
+	private handleSessionControlUpdate(update: SessionUpdate): void {
+		const updateKind = (update as { sessionUpdate?: string }).sessionUpdate;
+
+		if (updateKind === "current_mode_update") {
+			const modeUpdate = update as {
+				currentModeId?: unknown;
+				modeId?: unknown;
+			};
+			const modeId =
+				typeof modeUpdate.currentModeId === "string"
+					? modeUpdate.currentModeId
+					: typeof modeUpdate.modeId === "string"
+						? modeUpdate.modeId
+						: null;
+			if (modeId) {
+				this.updateSessionModeId(modeId);
+			}
+			return;
+		}
+
+		if (
+			updateKind === "config_option_update" ||
+			updateKind === "config_options_update"
+		) {
+			const configUpdate = update as { configOptions?: unknown };
+			if (Array.isArray(configUpdate.configOptions)) {
+				this.setSessionConfigOptions(
+					configUpdate.configOptions as SessionConfigOption[],
+				);
+			}
+		}
+	}
+
+	private emitSessionControlsUpdate(): void {
+		this.emit("session_controls_update", {
+			modes: this._sessionModes,
+			models: this._sessionModels,
+			configOptions: this._sessionConfigOptions,
+		});
+	}
+
+	private normalizeConfigOptions(
+		configOptions: SessionConfigOption[] | null | undefined,
+	): SessionConfigOption[] {
+		return Array.isArray(configOptions) ? [...configOptions] : [];
+	}
+
+	private clearSessionConfigurationState(emit = false): void {
+		this._sessionModes = null;
+		this._sessionModels = null;
+		this._sessionConfigOptions = [];
+		if (emit) {
+			this.emitSessionControlsUpdate();
+		}
+	}
+
+	private ensureSessionId(): string {
+		if (!this._session) {
+			throw new Error("No active session. Call newSession() first.");
+		}
+		return this._session.sessionId;
+	}
+
 	private disposeSessionState(): void {
 		this._session?.dispose();
 		this._session = null;
 		this._agentCapabilities = null;
 		this._agentInfo = null;
+		this.clearSessionConfigurationState();
 	}
 
 	private handleTransportClosed(reason?: string): void {

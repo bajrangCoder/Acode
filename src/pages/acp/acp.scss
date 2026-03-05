@@ -446,12 +446,8 @@
 			.acp-input-toolbar {
 				display: flex;
 				align-items: center;
-				gap: 2px;
+				gap: 6px;
 				padding: 4px 8px 8px;
-			}
-
-			.acp-toolbar-spacer {
-				flex: 1;
 			}
 
 			.acp-attach-btn {
@@ -480,6 +476,74 @@
 						transparent 88%
 					);
 				}
+			}
+
+			.acp-session-controls {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				flex: 1;
+				min-width: 0;
+				overflow-x: auto;
+				overflow-y: hidden;
+				padding: 2px 0;
+				-webkit-overflow-scrolling: touch;
+				scrollbar-width: none;
+
+				&::-webkit-scrollbar {
+					display: none;
+				}
+
+				&.hidden {
+					display: none;
+				}
+			}
+
+			.acp-session-control-btn {
+				height: 30px;
+				max-width: 180px;
+				display: inline-flex;
+				align-items: center;
+				gap: 2px;
+				flex-shrink: 0;
+				border: 1px solid
+					color-mix(in srgb, var(--border-color), var(--active-color) 8%);
+				background: color-mix(
+					in srgb,
+					var(--popup-background-color),
+					var(--secondary-text-color) 4%
+				);
+				color: var(--secondary-text-color);
+				border-radius: 9px;
+				padding: 0 8px 0 10px;
+				font-size: 0.8rem;
+				opacity: 0.84;
+
+				&:disabled {
+					opacity: 0.4;
+				}
+
+				&:active:not(:disabled) {
+					opacity: 1;
+					border-color: color-mix(
+						in srgb,
+						var(--active-color),
+						transparent 45%
+					);
+				}
+
+				.icon {
+					font-size: 1.05rem;
+					opacity: 0.55;
+					flex-shrink: 0;
+				}
+			}
+
+			.acp-session-control-text {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				min-width: 0;
 			}
 
 			.acp-send-btn,

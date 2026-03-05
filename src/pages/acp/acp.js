@@ -109,6 +109,7 @@ export default function AcpPageInclude() {
 		if ($messages) $messages.innerHTML = "";
 		ensureEmptyState();
 		$chatView.resetComposer?.();
+		$chatView.refreshComposerControls?.();
 
 		// Back from chat → disconnect and return to connect form
 		if (actionStack.has("acp-chat")) {
@@ -149,6 +150,7 @@ export default function AcpPageInclude() {
 		const $messages = <div className="acp-messages scroll"></div>;
 		let pendingAttachments = [];
 		let isSelectingAttachment = false;
+		let isUpdatingSessionControl = false;
 
 		const $emptyState = (
 			<div className="acp-empty-state">
@@ -226,10 +228,296 @@ export default function AcpPageInclude() {
 			</button>
 		);
 
+		const $sessionControls = (
+			<div className="acp-session-controls hidden"></div>
+		);
+
 		const $attachmentPreview = (
 			<div className="acp-attachment-preview hidden"></div>
 		);
 		const MAX_INLINE_MEDIA_BYTES = 5 * 1024 * 1024;
+
+		const SESSION_CONTROL_PRIORITY = {
+			mode: 0,
+			model: 1,
+			thought_level: 2,
+		};
+
+		function normalizeText(value, fallback = "") {
+			return typeof value === "string" && value.trim()
+				? value.trim()
+				: fallback;
+		}
+
+		function isGroupedSessionOptionList(options) {
+			if (!Array.isArray(options) || options.length === 0) return false;
+			const first = options[0];
+			return Boolean(first && Array.isArray(first.options));
+		}
+
+		function flattenSessionOptionChoices(option) {
+			const optionList = Array.isArray(option?.options) ? option.options : [];
+			if (!optionList.length) return [];
+
+			if (isGroupedSessionOptionList(optionList)) {
+				return optionList.flatMap((group) => {
+					const groupName = normalizeText(group?.name, "");
+					const groupOptions = Array.isArray(group?.options)
+						? group.options
+						: [];
+					return groupOptions
+						.map((entry) => {
+							const value = normalizeText(entry?.value, "");
+							const name = normalizeText(entry?.name, value);
+							if (!value || !name) return null;
+							return {
+								value,
+								name,
+								description: normalizeText(entry?.description, ""),
+								groupName,
+							};
+						})
+						.filter(Boolean);
+				});
+			}
+
+			return optionList
+				.map((entry) => {
+					const value = normalizeText(entry?.value, "");
+					const name = normalizeText(entry?.name, value);
+					if (!value || !name) return null;
+					return {
+						value,
+						name,
+						description: normalizeText(entry?.description, ""),
+						groupName: "",
+					};
+				})
+				.filter(Boolean);
+		}
+
+		function findChoiceName(choices, selectedValue, fallback) {
+			const nextValue = normalizeText(selectedValue, "");
+			const choice = choices.find((item) => item.value === nextValue);
+			if (choice?.name) return choice.name;
+			return normalizeText(nextValue, fallback);
+		}
+
+		function formatSelectLabel(choice) {
+			return choice.groupName
+				? `${choice.groupName} · ${choice.name}`
+				: choice.name;
+		}
+
+		function toSessionControls() {
+			const controls = [];
+			const hasModeState = Boolean(client.sessionModes?.availableModes?.length);
+			const hasModelState = Boolean(
+				client.sessionModels?.availableModels?.length,
+			);
+
+			const modeState = client.sessionModes;
+			if (hasModeState && modeState) {
+				const choices = modeState.availableModes
+					.map((mode) => {
+						const value = normalizeText(mode?.id, "");
+						const name = normalizeText(mode?.name, value);
+						if (!value || !name) return null;
+						return {
+							value,
+							name,
+							description: normalizeText(mode?.description, ""),
+							groupName: "",
+						};
+					})
+					.filter(Boolean);
+
+				if (choices.length) {
+					controls.push({
+						kind: "mode",
+						name: "Mode",
+						category: "mode",
+						currentValue: normalizeText(modeState.currentModeId, ""),
+						currentName: findChoiceName(
+							choices,
+							modeState.currentModeId,
+							"Mode",
+						),
+						displayText: findChoiceName(
+							choices,
+							modeState.currentModeId,
+							"Mode",
+						),
+						choices,
+					});
+				}
+			}
+
+			const modelState = client.sessionModels;
+			if (hasModelState && modelState) {
+				const choices = modelState.availableModels
+					.map((model) => {
+						const value = normalizeText(model?.modelId, "");
+						const name = normalizeText(model?.name, value);
+						if (!value || !name) return null;
+						return {
+							value,
+							name,
+							description: normalizeText(model?.description, ""),
+							groupName: "",
+						};
+					})
+					.filter(Boolean);
+
+				if (choices.length) {
+					controls.push({
+						kind: "model",
+						name: "Model",
+						category: "model",
+						currentValue: normalizeText(modelState.currentModelId, ""),
+						currentName: findChoiceName(
+							choices,
+							modelState.currentModelId,
+							"Model",
+						),
+						displayText: findChoiceName(
+							choices,
+							modelState.currentModelId,
+							"Model",
+						),
+						choices,
+					});
+				}
+			}
+
+			const configControls = (client.sessionConfigOptions || [])
+				.map((option) => {
+					if (!option || option.type !== "select") return null;
+					const optionId = normalizeText(option.id, "");
+					if (!optionId) return null;
+
+					const category = normalizeText(option.category, "");
+					if (category === "mode" && hasModeState) return null;
+					if (category === "model" && hasModelState) return null;
+
+					const choices = flattenSessionOptionChoices(option);
+					if (!choices.length) return null;
+
+					const currentValue = normalizeText(option.currentValue, "");
+					const currentName = findChoiceName(choices, currentValue, "Select");
+					const name = normalizeText(option.name, optionId);
+					const isPrimary =
+						category === "mode" ||
+						category === "model" ||
+						category === "thought_level";
+
+					return {
+						kind: "config",
+						id: optionId,
+						name,
+						category,
+						currentValue,
+						currentName,
+						description: normalizeText(option.description, ""),
+						displayText: isPrimary ? currentName : `${name}: ${currentName}`,
+						choices,
+					};
+				})
+				.filter(Boolean)
+				.sort((a, b) => {
+					const priorityA =
+						SESSION_CONTROL_PRIORITY[a.category] ?? Number.MAX_SAFE_INTEGER;
+					const priorityB =
+						SESSION_CONTROL_PRIORITY[b.category] ?? Number.MAX_SAFE_INTEGER;
+					if (priorityA !== priorityB) return priorityA - priorityB;
+					return a.name.localeCompare(b.name);
+				});
+
+			return [...controls, ...configControls];
+		}
+
+		async function applySessionControl(control, nextValue) {
+			if (!client.session || !nextValue) return;
+			if (nextValue === control.currentValue) return;
+
+			isUpdatingSessionControl = true;
+			renderSessionControls();
+
+			try {
+				if (control.kind === "mode") {
+					await client.setSessionMode(nextValue);
+				} else if (control.kind === "model") {
+					await client.setSessionModel(nextValue);
+				} else {
+					await client.setSessionConfigOption(control.id, nextValue);
+				}
+			} catch (error) {
+				console.error("[ACP] Failed to update session control:", error);
+				toast(error?.message || "Failed to update session setting");
+			} finally {
+				isUpdatingSessionControl = false;
+				renderSessionControls();
+			}
+		}
+
+		async function openSessionControlPicker(control) {
+			if (!client.session || isPrompting || isUpdatingSessionControl) return;
+			if (!Array.isArray(control.choices) || !control.choices.length) return;
+
+			try {
+				const nextValue = await select(
+					control.name,
+					control.choices.map((choice) => ({
+						value: choice.value,
+						text: formatSelectLabel(choice),
+					})),
+					{
+						default: control.currentValue,
+						textTransform: false,
+					},
+				);
+				if (!nextValue || nextValue === control.currentValue) return;
+				await applySessionControl(control, nextValue);
+			} catch (error) {
+				if (!error) return;
+				console.error("[ACP] Failed to open session control selector:", error);
+				toast(error?.message || "Failed to open selector");
+			}
+		}
+
+		function renderSessionControls() {
+			withStableMessagesViewport(() => {
+				const controls = toSessionControls();
+				$sessionControls.innerHTML = "";
+
+				if (!controls.length) {
+					$sessionControls.classList.add("hidden");
+					return;
+				}
+
+				$sessionControls.classList.remove("hidden");
+				controls.forEach((control) => {
+					const $button = (
+						<button
+							className="acp-session-control-btn"
+							title={control.name}
+							onclick={() => openSessionControlPicker(control)}
+						>
+							<span className="acp-session-control-text">
+								{control.displayText}
+							</span>
+							<i className="icon arrow_drop_down"></i>
+						</button>
+					);
+					$button.disabled =
+						isPrompting ||
+						isUpdatingSessionControl ||
+						!client.session ||
+						!control.choices.length;
+					$sessionControls.append($button);
+				});
+			});
+		}
 
 		function toAttachmentName(selectedFile) {
 			if (selectedFile?.name) return selectedFile.name;
@@ -557,7 +845,7 @@ export default function AcpPageInclude() {
 						{$textarea}
 						<div className="acp-input-toolbar">
 							{$attachBtn}
-							<div className="acp-toolbar-spacer"></div>
+							{$sessionControls}
 							{$sendBtn}
 							{$cancelBtn}
 						</div>
@@ -579,6 +867,11 @@ export default function AcpPageInclude() {
 			$textarea.style.height = "auto";
 			renderAttachmentPreview();
 			updateSendButtonState();
+			renderSessionControls();
+		};
+
+		$view.refreshComposerControls = () => {
+			renderSessionControls();
 		};
 
 		updateSendButtonState();
@@ -816,6 +1109,7 @@ export default function AcpPageInclude() {
 			elements.$cancelBtn.style.display = value ? "flex" : "none";
 		}
 		updateStatusDot(value ? "connecting" : "connected");
+		$chatView.refreshComposerControls?.();
 		if (currentView === "chat") {
 			syncTimeline();
 		}
@@ -929,6 +1223,10 @@ export default function AcpPageInclude() {
 
 	client.on("session_update", () => {
 		syncTimeline();
+	});
+
+	client.on("session_controls_update", () => {
+		$chatView.refreshComposerControls?.();
 	});
 
 	client.on("permission_request", (data) => {
