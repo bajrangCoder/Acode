@@ -365,6 +365,84 @@
 				box-sizing: border-box;
 			}
 
+			.acp-attachment-preview {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				padding: 12px 12px 0;
+
+				&.hidden {
+					display: none;
+				}
+			}
+
+			.acp-attachment-chip {
+				display: inline-flex;
+				align-items: center;
+				gap: 7px;
+				min-height: 26px;
+				max-width: 100%;
+				padding: 3px 7px;
+				border-radius: 999px;
+				border: 1px solid
+					color-mix(in srgb, var(--border-color), var(--active-color) 15%);
+				background: color-mix(
+					in srgb,
+					var(--popup-background-color),
+					var(--secondary-text-color) 7%
+				);
+				color: var(--secondary-text-color);
+				font-size: 0.72rem;
+				line-height: 1;
+
+				.icon {
+					font-size: 0.95rem;
+					opacity: 0.6;
+				}
+			}
+
+			.acp-attachment-chip-name {
+				max-width: 160px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				font-weight: 500;
+			}
+
+			.acp-attachment-chip-size {
+				opacity: 0.55;
+				font-size: 0.68rem;
+
+				&:empty {
+					display: none;
+				}
+			}
+
+			.acp-attachment-remove {
+				width: 18px;
+				height: 18px;
+				border: none;
+				border-radius: 50%;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 0.9rem;
+				line-height: 1;
+				cursor: pointer;
+				background: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 90%
+				);
+				color: var(--secondary-text-color);
+				opacity: 0.6;
+				padding: 0;
+
+				&:active {
+					opacity: 0.9;
+				}
+			}
+
 			.acp-input-toolbar {
 				display: flex;
 				align-items: center;
@@ -567,10 +645,62 @@
 				margin: 8px 0;
 			}
 
-			.acp-resource-link {
+			.acp-message-attachments {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin-bottom: 10px;
+			}
+
+			.acp-resource-chip {
 				display: inline-flex;
 				align-items: center;
-				gap: 6px;
+				gap: 8px;
+				max-width: 100%;
+				padding: 6px 8px;
+				border-radius: 12px;
+				border: 1px solid
+					color-mix(in srgb, var(--border-color), var(--active-color) 14%);
+				background: color-mix(
+					in srgb,
+					var(--secondary-color),
+					var(--secondary-text-color) 6%
+				);
+				color: inherit;
+				text-decoration: none;
+
+				.icon {
+					font-size: 1rem;
+					opacity: 0.55;
+					flex-shrink: 0;
+				}
+			}
+
+			.acp-resource-chip-meta {
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+			}
+
+			.acp-resource-chip-title {
+				font-size: 0.76rem;
+				font-weight: 600;
+				line-height: 1.2;
+				max-width: 220px;
+				overflow: hidden;
+				white-space: nowrap;
+				text-overflow: ellipsis;
+			}
+
+			.acp-resource-chip-detail {
+				font-size: 0.67rem;
+				line-height: 1.2;
+				opacity: 0.52;
+				margin-top: 2px;
+
+				&:empty {
+					display: none;
+				}
 			}
 
 			strong {

@@ -1,12 +1,17 @@
 import "./acp.scss";
+import fsOperation from "fileSystem";
 import Page from "components/page";
 import toast from "components/toast";
 import select from "dialogs/select";
+import { filesize } from "filesize";
 import { ACPClient } from "lib/acp/client";
 import acpHistory from "lib/acp/history";
 import { ConnectionState } from "lib/acp/models";
 import actionStack from "lib/actionStack";
+import mimeType from "mime-types";
+import FileBrowser from "pages/fileBrowser";
 import helpers from "utils/helpers";
+import Url from "utils/Url";
 import AgentForm from "./components/agentForm";
 import ChatMessage from "./components/chatMessage";
 import PermissionDialog from "./components/permissionDialog";
@@ -99,6 +104,7 @@ export default function AcpPageInclude() {
 		const $messages = $chatView.querySelector(".acp-messages");
 		if ($messages) $messages.innerHTML = "";
 		ensureEmptyState();
+		$chatView.resetComposer?.();
 
 		// Back from chat → disconnect and return to connect form
 		if (actionStack.has("acp-chat")) {
@@ -136,6 +142,8 @@ export default function AcpPageInclude() {
 
 	function buildChatView() {
 		const $messages = <div className="acp-messages scroll"></div>;
+		let pendingAttachments = [];
+		let isSelectingAttachment = false;
 
 		const $emptyState = (
 			<div className="acp-empty-state">
@@ -170,6 +178,7 @@ export default function AcpPageInclude() {
 
 		function sendSuggestion(text) {
 			$textarea.value = text;
+			updateSendButtonState();
 			handleSend();
 		}
 
@@ -181,18 +190,23 @@ export default function AcpPageInclude() {
 				oninput={(e) => {
 					e.target.style.height = "auto";
 					e.target.style.height = Math.min(e.target.scrollHeight, 128) + "px";
+					updateSendButtonState();
 				}}
 			></textarea>
 		);
 
 		const $attachBtn = (
-			<button className="acp-attach-btn" title="Attach context">
+			<button
+				className="acp-attach-btn"
+				title="Attach context file"
+				onclick={handleAttachContext}
+			>
 				<i className="icon attach_file"></i>
 			</button>
 		);
 
 		const $sendBtn = (
-			<button className="acp-send-btn" onclick={handleSend}>
+			<button className="acp-send-btn" onclick={handleSend} disabled>
 				<i className="icon send"></i>
 			</button>
 		);
@@ -207,27 +221,309 @@ export default function AcpPageInclude() {
 			</button>
 		);
 
+		const $attachmentPreview = (
+			<div className="acp-attachment-preview hidden"></div>
+		);
+		const MAX_INLINE_MEDIA_BYTES = 5 * 1024 * 1024;
+
+		function toAttachmentName(selectedFile) {
+			if (selectedFile?.name) return selectedFile.name;
+			const target = String(selectedFile?.url || "");
+			const maybeName = Url.basename(target);
+			if (maybeName) return decodeURIComponent(maybeName);
+			return "Attachment";
+		}
+
+		function extractByteSize(stat) {
+			const candidates = [stat?.size, stat?.length, stat?.byteLength];
+			for (const candidate of candidates) {
+				if (Number.isFinite(candidate) && candidate >= 0) {
+					return Number(candidate);
+				}
+			}
+			return null;
+		}
+
+		function formatFileSize(size) {
+			if (!Number.isFinite(size) || size <= 0) return "";
+			try {
+				return filesize(size);
+			} catch {
+				return "";
+			}
+		}
+
+		function guessMimeType(name = "") {
+			const resolvedType = mimeType.lookup(name);
+			return typeof resolvedType === "string" ? resolvedType : "";
+		}
+
+		function normalizeMimeType(value = "") {
+			if (typeof value !== "string") return "";
+			const normalized = value.trim().toLowerCase();
+			return normalized.includes("/") ? normalized : "";
+		}
+
+		function removeAttachment(index) {
+			pendingAttachments.splice(index, 1);
+			renderAttachmentPreview();
+			updateSendButtonState();
+		}
+
+		function withStableMessagesViewport(updateComposer) {
+			const $messagesEl = $chatView.querySelector(".acp-messages");
+			if (!$messagesEl) {
+				updateComposer();
+				return;
+			}
+			const distanceFromBottom =
+				$messagesEl.scrollHeight -
+				$messagesEl.scrollTop -
+				$messagesEl.clientHeight;
+
+			updateComposer();
+
+			requestAnimationFrame(() => {
+				const $nextMessagesEl = $chatView.querySelector(".acp-messages");
+				if (!$nextMessagesEl) return;
+				const nextScrollTop =
+					$nextMessagesEl.scrollHeight -
+					$nextMessagesEl.clientHeight -
+					distanceFromBottom;
+				$nextMessagesEl.scrollTop = Math.max(0, nextScrollTop);
+			});
+		}
+
+		function renderAttachmentPreview() {
+			withStableMessagesViewport(() => {
+				$attachmentPreview.innerHTML = "";
+				if (!pendingAttachments.length) {
+					$attachmentPreview.classList.add("hidden");
+					return;
+				}
+
+				$attachmentPreview.classList.remove("hidden");
+				pendingAttachments.forEach((attachment, index) => {
+					const $chip = (
+						<div className="acp-attachment-chip" title={attachment.uri}>
+							<i className="icon attach_file"></i>
+							<span className="acp-attachment-chip-name">
+								{attachment.name}
+							</span>
+							<span className="acp-attachment-chip-size">
+								{formatFileSize(attachment.size)}
+							</span>
+							<button
+								className="acp-attachment-remove"
+								title={`Remove ${attachment.name}`}
+								onclick={() => removeAttachment(index)}
+							>
+								×
+							</button>
+						</div>
+					);
+					$attachmentPreview.append($chip);
+				});
+			});
+		}
+
+		function updateSendButtonState() {
+			if (isPrompting) return;
+			const hasText = Boolean($textarea.value.trim());
+			const hasAttachments = pendingAttachments.length > 0;
+			$sendBtn.disabled = !hasText && !hasAttachments;
+		}
+
+		function toResourceLinkBlock(attachment) {
+			const block = {
+				type: "resource_link",
+				name: attachment.name,
+				uri: attachment.uri,
+			};
+			if (attachment.mimeType) {
+				block.mimeType = attachment.mimeType;
+			}
+			if (Number.isFinite(attachment.size) && attachment.size >= 0) {
+				block.size = attachment.size;
+			}
+			return block;
+		}
+
+		function canSendImageBlocks() {
+			return Boolean(client.agentCapabilities?.promptCapabilities?.image);
+		}
+
+		function canSendAudioBlocks() {
+			return Boolean(client.agentCapabilities?.promptCapabilities?.audio);
+		}
+
+		function isImageMimeType(mime = "") {
+			return mime.startsWith("image/");
+		}
+
+		function isAudioMimeType(mime = "") {
+			return mime.startsWith("audio/");
+		}
+
+		async function toBase64Data(data, mime = "application/octet-stream") {
+			if (typeof data === "string") {
+				const dataUrlMatch = /^data:[^;]+;base64,(.+)$/i.exec(data);
+				if (dataUrlMatch?.[1]) return dataUrlMatch[1];
+				return null;
+			}
+
+			const blob =
+				data instanceof Blob
+					? data
+					: new Blob([data], {
+							type: mime || "application/octet-stream",
+						});
+
+			return await new Promise((resolve) => {
+				const reader = new FileReader();
+				reader.onload = () => {
+					const result = String(reader.result || "");
+					const base64 = result.split(",")[1] || "";
+					resolve(base64 || null);
+				};
+				reader.onerror = () => resolve(null);
+				reader.readAsDataURL(blob);
+			});
+		}
+
+		async function toMediaContentBlock(attachment) {
+			const mime = normalizeMimeType(attachment.mimeType);
+			const canImage = canSendImageBlocks() && isImageMimeType(mime);
+			const canAudio = canSendAudioBlocks() && isAudioMimeType(mime);
+			if (!canImage && !canAudio) return null;
+
+			if (
+				Number.isFinite(attachment.size) &&
+				attachment.size > MAX_INLINE_MEDIA_BYTES
+			) {
+				return null;
+			}
+
+			try {
+				const rawData = await fsOperation(attachment.uri).readFile();
+				const base64Data = await toBase64Data(rawData, mime);
+				if (!base64Data) return null;
+
+				if (canImage) {
+					return {
+						type: "image",
+						mimeType: mime,
+						data: base64Data,
+						uri: attachment.uri,
+					};
+				}
+
+				return {
+					type: "audio",
+					mimeType: mime,
+					data: base64Data,
+				};
+			} catch {
+				return null;
+			}
+		}
+
+		async function getAttachmentContentBlocks() {
+			const blocks = [];
+			for (const attachment of pendingAttachments) {
+				const mediaBlock = await toMediaContentBlock(attachment);
+				if (mediaBlock) {
+					blocks.push(mediaBlock);
+				} else {
+					blocks.push(toResourceLinkBlock(attachment));
+				}
+			}
+			return blocks;
+		}
+
+		async function buildPromptContent(text) {
+			const content = await getAttachmentContentBlocks();
+			if (text) {
+				content.push({ type: "text", text });
+			}
+			return content;
+		}
+
+		async function handleAttachContext() {
+			if (isPrompting || isSelectingAttachment) return;
+
+			isSelectingAttachment = true;
+			try {
+				const selectedFile = await FileBrowser("file", "Select file to attach");
+				if (!selectedFile?.url) return;
+
+				const uri = String(selectedFile.url);
+				if (pendingAttachments.some((attachment) => attachment.uri === uri)) {
+					toast("File already attached");
+					return;
+				}
+
+				const name = toAttachmentName(selectedFile);
+				let size = null;
+				let detectedMimeType = "";
+				try {
+					const stat = await fsOperation(uri).stat();
+					size = extractByteSize(stat);
+					detectedMimeType =
+						normalizeMimeType(stat?.mimeType) ||
+						normalizeMimeType(stat?.mime) ||
+						normalizeMimeType(stat?.type);
+				} catch {
+					// Keep attachment even if file metadata couldn't be read.
+				}
+
+				pendingAttachments.push({
+					uri,
+					name,
+					size,
+					mimeType: detectedMimeType || guessMimeType(name),
+				});
+				renderAttachmentPreview();
+				updateSendButtonState();
+			} catch (error) {
+				if (error) {
+					console.error("[ACP] Failed to attach context:", error);
+					toast(error.message || "Failed to attach file");
+				}
+			} finally {
+				isSelectingAttachment = false;
+			}
+		}
+
 		async function handleSend() {
 			const text = $textarea.value.trim();
-			if (!text || isPrompting) return;
+			const hasAttachments = pendingAttachments.length > 0;
+			if ((!text && !hasAttachments) || isPrompting) return;
 
 			// Remove empty state when first message is sent
 			if ($emptyState.parentNode) $emptyState.remove();
 
+			const content = await buildPromptContent(text);
+
 			$textarea.value = "";
 			$textarea.style.height = "auto";
+			pendingAttachments = [];
+			renderAttachmentPreview();
+			updateSendButtonState();
 
 			setPrompting(true, { $sendBtn, $cancelBtn });
 
 			try {
-				const promptRequest = client.sendTextPrompt(text);
+				const promptRequest = client.prompt(content);
 				syncTimeline();
 				await promptRequest;
 			} catch (err) {
 				console.error("[ACP] Prompt error:", err);
+				toast(err?.message || "Failed to send prompt");
 			} finally {
 				saveCurrentSessionHistory();
 				setPrompting(false, { $sendBtn, $cancelBtn });
+				updateSendButtonState();
 			}
 		}
 
@@ -252,6 +548,7 @@ export default function AcpPageInclude() {
 				{$messages}
 				<div className="acp-input-area">
 					<div className="acp-input-container">
+						{$attachmentPreview}
 						{$textarea}
 						<div className="acp-input-toolbar">
 							{$attachBtn}
@@ -270,6 +567,16 @@ export default function AcpPageInclude() {
 				$view.insertBefore($emptyState, $messages);
 			}
 		};
+
+		$view.resetComposer = () => {
+			pendingAttachments = [];
+			$textarea.value = "";
+			$textarea.style.height = "auto";
+			renderAttachmentPreview();
+			updateSendButtonState();
+		};
+
+		updateSendButtonState();
 
 		return $view;
 	}

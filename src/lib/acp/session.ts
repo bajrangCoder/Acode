@@ -34,7 +34,9 @@ export class ACPSession {
 	updatedAt: string | null = null;
 
 	private agentTextBuffer = "";
+	private userTextBuffer = "";
 	private currentAgentMessageId: string | null = null;
+	private currentUserMessageId: string | null = null;
 	private currentPlanEntryId: string | null = null;
 	private listeners = new Map<SessionEventType, Set<SessionEventHandler>>();
 	private pendingPermissions: PermissionRequest[] = [];
@@ -69,6 +71,7 @@ export class ACPSession {
 
 	addUserMessage(content: ContentBlock[]): ChatMessage {
 		this.closeCurrentAgentMessage();
+		this.closeCurrentUserMessage();
 
 		const message: ChatMessage = {
 			id: this.nextMessageId(),
@@ -121,6 +124,7 @@ export class ACPSession {
 
 	finishAgentTurn(): void {
 		this.closeCurrentAgentMessage();
+		this.closeCurrentUserMessage();
 		this.currentPlanEntryId = null;
 		this.emit("session_end", null);
 	}
@@ -133,10 +137,14 @@ export class ACPSession {
 		role: ChatMessage["role"],
 		content: ContentBlock,
 	): void {
-		const message =
-			role === "agent"
-				? this.getOrCreateCurrentAgentMessage()
-				: this.createMessage(role, [], false);
+		let message: ChatMessage;
+		if (role === "agent") {
+			this.closeCurrentUserMessage();
+			message = this.getOrCreateCurrentAgentMessage();
+		} else {
+			this.closeCurrentAgentMessage();
+			message = this.getOrCreateCurrentUserMessage();
+		}
 		if (!message) return;
 
 		if (role === "agent") {
@@ -146,17 +154,17 @@ export class ACPSession {
 		if (content.type === "text") {
 			if (role === "agent") {
 				this.agentTextBuffer += content.text;
+			} else {
+				this.userTextBuffer += content.text;
 			}
 			const existingText = message.content.find((c) => c.type === "text");
 			if (existingText && existingText.type === "text") {
 				existingText.text =
-					role === "agent"
-						? this.agentTextBuffer
-						: existingText.text + content.text;
+					role === "agent" ? this.agentTextBuffer : this.userTextBuffer;
 			} else {
 				message.content.push({
 					type: "text",
-					text: role === "agent" ? this.agentTextBuffer : content.text,
+					text: role === "agent" ? this.agentTextBuffer : this.userTextBuffer,
 				});
 			}
 		} else {
@@ -170,6 +178,7 @@ export class ACPSession {
 		update: SessionUpdate & { sessionUpdate: "tool_call" },
 	): void {
 		this.closeCurrentAgentMessage();
+		this.closeCurrentUserMessage();
 
 		const toolCall: ToolCall = {
 			toolCallId: update.toolCallId,
@@ -300,6 +309,10 @@ export class ACPSession {
 			this.currentAgentMessageId = message.id;
 			this.agentTextBuffer = "";
 		}
+		if (role === "user") {
+			this.currentUserMessageId = message.id;
+			this.userTextBuffer = "";
+		}
 		return message;
 	}
 
@@ -309,6 +322,14 @@ export class ACPSession {
 		);
 		if (existing) return existing;
 		return this.createMessage("agent", [], true);
+	}
+
+	private getOrCreateCurrentUserMessage(): ChatMessage {
+		const existing = this.messages.find(
+			(message) => message.id === this.currentUserMessageId,
+		);
+		if (existing) return existing;
+		return this.createMessage("user", [], false);
 	}
 
 	private closeCurrentAgentMessage(): void {
@@ -326,8 +347,18 @@ export class ACPSession {
 		this.agentTextBuffer = "";
 	}
 
+	private closeCurrentUserMessage(): void {
+		if (!this.currentUserMessageId) return;
+		this.currentUserMessageId = null;
+		this.userTextBuffer = "";
+	}
+
 	dispose(): void {
 		this.listeners.clear();
 		this.pendingPermissions.length = 0;
+		this.currentAgentMessageId = null;
+		this.currentUserMessageId = null;
+		this.agentTextBuffer = "";
+		this.userTextBuffer = "";
 	}
 }
