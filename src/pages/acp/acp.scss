@@ -689,22 +689,114 @@
 		&.thought {
 			align-self: stretch;
 
-			.acp-message-content {
+			.acp-thinking-block {
 				background: color-mix(
 					in srgb,
 					var(--popup-background-color),
 					var(--secondary-text-color) 2%
 				);
-				border: 1px dashed
-					color-mix(in srgb, var(--border-color), transparent 10%);
+				border: 1px solid
+					color-mix(in srgb, var(--border-color), transparent 20%);
+				border-radius: 12px;
+				overflow: hidden;
+				transition: border-color 0.3s ease;
+			}
+
+			&.streaming .acp-thinking-block {
+				border-color: color-mix(
+					in srgb,
+					var(--active-color),
+					transparent 60%
+				);
+			}
+
+			.acp-thinking-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 10px 14px;
+				cursor: pointer;
+				user-select: none;
+				transition: background 0.15s ease;
+
+				&:active {
+					background: color-mix(
+						in srgb,
+						var(--secondary-text-color),
+						transparent 92%
+					);
+				}
+			}
+
+			.acp-thinking-header-left {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				min-width: 0;
+			}
+
+			.acp-thinking-icon {
+				font-size: 18px;
+				color: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 40%
+				);
+				transition: color 0.3s ease;
+				flex-shrink: 0;
+
+				&.active {
+					color: var(--active-color);
+					animation: acp-streaming-pulse 1.5s ease-in-out infinite;
+				}
+			}
+
+			.acp-thinking-title {
+				font-size: 0.8rem;
+				font-weight: 600;
 				color: color-mix(
 					in srgb,
 					var(--secondary-text-color),
 					transparent 20%
 				);
-				border-radius: 12px;
+			}
+
+			.acp-thinking-chevron {
+				font-size: 18px;
+				color: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 50%
+				);
+				transition: transform 0.2s ease;
+				flex-shrink: 0;
+
+				&.expanded {
+					transform: rotate(180deg);
+				}
+			}
+
+			.acp-thinking-body {
+				display: none;
+				border-top: 1px solid var(--border-color);
+				background: color-mix(
+					in srgb,
+					var(--popup-background-color),
+					var(--secondary-text-color) 1%
+				);
 				padding: 12px 16px;
 				font-style: italic;
+				font-size: 0.82rem;
+				line-height: 1.6;
+				color: color-mix(
+					in srgb,
+					var(--secondary-text-color),
+					transparent 30%
+				);
+
+				&.expanded {
+					display: block;
+				}
 			}
 		}
 

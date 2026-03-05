@@ -280,11 +280,88 @@ async function resolveExistingPath(candidates = []) {
 	return null;
 }
 
+function ThoughtMessage({
+	message: initMessage,
+	isResponding: initResponding,
+}) {
+	let message = initMessage;
+	let messageResponding = initResponding;
+	let isExpanded = false;
+
+	const $icon = <i className="icon react acp-thinking-icon"></i>;
+	const $title = <span className="acp-thinking-title"></span>;
+	const $chevron = <i className="icon expand_more acp-thinking-chevron"></i>;
+	const $body = <div className="acp-thinking-body"></div>;
+
+	const $header = (
+		<div
+			className="acp-thinking-header"
+			onclick={() => {
+				isExpanded = !isExpanded;
+				$body.classList.toggle("expanded", isExpanded);
+				$chevron.classList.toggle("expanded", isExpanded);
+			}}
+		>
+			<div className="acp-thinking-header-left">
+				{$icon}
+				{$title}
+			</div>
+			{$chevron}
+		</div>
+	);
+
+	function renderThinking() {
+		$body.innerHTML = "";
+		const textBlocks = (message.content || []).filter((b) => b.type === "text");
+		const text = textBlocks.map((b) => b.text).join("\n");
+		if (text) {
+			const $markdown = <div className="acp-markdown-block md"></div>;
+			$markdown.innerHTML = renderMarkdown(text);
+			$body.append($markdown);
+		}
+
+		const isActive = Boolean(messageResponding);
+		$title.textContent = isActive ? "Thinking…" : "Thought Process";
+		$icon.classList.toggle("active", isActive);
+		$el.classList.toggle("streaming", isActive);
+	}
+
+	renderThinking();
+
+	const $el = (
+		<div className="acp-message thought">
+			<div className="acp-thinking-block">
+				{$header}
+				{$body}
+			</div>
+		</div>
+	);
+
+	const timestamp = new Date(message.timestamp);
+	$el.title = Number.isNaN(timestamp.getTime())
+		? ""
+		: timestamp.toLocaleString();
+
+	$el.update = (msg) => {
+		message = msg.message || msg;
+		if ("isResponding" in msg) messageResponding = Boolean(msg.isResponding);
+		renderThinking();
+		const ts = new Date(message.timestamp);
+		$el.title = Number.isNaN(ts.getTime()) ? "" : ts.toLocaleString();
+	};
+
+	return $el;
+}
+
 export default function ChatMessage({
 	message,
 	cwd = "",
 	isResponding = false,
 }) {
+	if (message.role === "thought") {
+		return ThoughtMessage({ message, isResponding });
+	}
+
 	let messageCwd = cwd;
 	let messageResponding = isResponding;
 
@@ -342,7 +419,7 @@ export default function ChatMessage({
 	};
 
 	function appendTextBlock(text) {
-		if (message.role === "agent" || message.role === "thought") {
+		if (message.role === "agent") {
 			const $markdown = <div className="acp-markdown-block md"></div>;
 			$markdown.innerHTML = renderMarkdown(text);
 			$content.append($markdown);
@@ -434,12 +511,7 @@ export default function ChatMessage({
 				</span>,
 			);
 		}
-		$role.textContent =
-			message.role === "user"
-				? "You"
-				: message.role === "thought"
-					? "Thinking"
-					: "Agent";
+		$role.textContent = message.role === "user" ? "You" : "Agent";
 		$meta.hidden = $meta.childElementCount === 0;
 		const timestamp = new Date(message.timestamp);
 		$el.title = Number.isNaN(timestamp.getTime())
