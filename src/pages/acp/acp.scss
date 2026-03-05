@@ -100,6 +100,47 @@
 							color-mix(in srgb, var(--active-color), transparent 85%);
 					}
 				}
+
+				.acp-cwd-input-row {
+					display: flex;
+					align-items: center;
+					gap: 8px;
+
+					input {
+						flex: 1;
+						min-width: 0;
+					}
+				}
+
+				.acp-cwd-pick-btn {
+					width: 44px;
+					height: 44px;
+					display: flex;
+					align-items: center;
+					justify-content: center;
+					border-radius: 10px;
+					border: 1px solid var(--border-color);
+					background: var(--popup-background-color);
+					color: var(--popup-text-color);
+					cursor: pointer;
+					transition:
+						border-color 0.2s,
+						background-color 0.2s;
+
+					&:active {
+						border-color: var(--active-color);
+						background: color-mix(
+							in srgb,
+							var(--active-color),
+							transparent 90%
+						);
+					}
+
+					&:disabled {
+						opacity: 0.4;
+						pointer-events: none;
+					}
+				}
 			}
 
 			.acp-connect-btn {

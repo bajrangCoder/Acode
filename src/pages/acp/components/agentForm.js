@@ -1,4 +1,9 @@
-export default function AgentForm({ onConnect, statusMsg, isConnecting }) {
+export default function AgentForm({
+	onConnect,
+	onPickCwd,
+	statusMsg,
+	isConnecting,
+}) {
 	const $urlInput = (
 		<input
 			type="text"
@@ -9,6 +14,24 @@ export default function AgentForm({ onConnect, statusMsg, isConnecting }) {
 
 	const $cwdInput = (
 		<input type="text" placeholder="e.g. /home/user/project (optional)" />
+	);
+
+	const $cwdPickBtn = (
+		<button
+			type="button"
+			className="acp-cwd-pick-btn"
+			title="Select working directory"
+			disabled={isConnecting}
+			onclick={async () => {
+				if (typeof onPickCwd !== "function") return;
+				const selectedCwd = await onPickCwd($cwdInput.value.trim());
+				if (typeof selectedCwd === "string" && selectedCwd.trim()) {
+					$cwdInput.value = selectedCwd.trim();
+				}
+			}}
+		>
+			<i className="icon folder_open"></i>
+		</button>
 	);
 
 	const $btn = (
@@ -44,7 +67,10 @@ export default function AgentForm({ onConnect, statusMsg, isConnecting }) {
 				</div>
 				<div className="acp-field">
 					<label>Working Directory</label>
-					{$cwdInput}
+					<div className="acp-cwd-input-row">
+						{$cwdInput}
+						{$cwdPickBtn}
+					</div>
 				</div>
 				{$btn}
 			</div>
@@ -56,6 +82,7 @@ export default function AgentForm({ onConnect, statusMsg, isConnecting }) {
 		$btn.disabled = connecting;
 		$btn.className = `acp-connect-btn${connecting ? " connecting" : ""}`;
 		$btn.textContent = connecting ? "" : "Connect";
+		$cwdPickBtn.disabled = connecting;
 	};
 
 	$el.setStatus = (msg) => {

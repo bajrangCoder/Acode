@@ -8,6 +8,7 @@ import { ACPClient } from "lib/acp/client";
 import acpHistory from "lib/acp/history";
 import { ConnectionState } from "lib/acp/models";
 import actionStack from "lib/actionStack";
+import { addedFolder } from "lib/openFolder";
 import mimeType from "mime-types";
 import FileBrowser from "pages/fileBrowser";
 import helpers from "utils/helpers";
@@ -31,10 +32,12 @@ export default function AcpPageInclude() {
 	let pendingTurnIndicatorElement = null;
 	let isPrompting = false;
 	let activePromptSessionId = null;
+	const BROWSE_CWD_OPTION = "__acp_cwd_browse__";
 
 	// ─── Connection Form ───
 	const $form = AgentForm({
 		onConnect: handleConnect,
+		onPickCwd: handlePickWorkingDirectory,
 		statusMsg: "",
 		isConnecting: false,
 	});
@@ -57,7 +60,7 @@ export default function AcpPageInclude() {
 	async function handleConnect({ url, cwd }) {
 		if (!url) return;
 
-		const nextCwd = cwd || "";
+		const nextCwd = normalizeSessionCwd(cwd || "");
 		$form.setValues({ url, cwd: nextCwd });
 		$form.setConnecting(true);
 		setFormStatus("");
@@ -74,6 +77,168 @@ export default function AcpPageInclude() {
 		} catch (err) {
 			$form.setConnecting(false);
 			setFormStatus(err.message || "Connection failed");
+		}
+	}
+
+	function getTerminalPaths() {
+		const packageName = window.BuildInfo?.packageName || "com.foxdebug.acode";
+		const dataDir = `/data/user/0/${packageName}`;
+		return {
+			alpineRoot: `${dataDir}/files/alpine`,
+			publicDir: `${dataDir}/files/public`,
+		};
+	}
+
+	function normalizePathInput(value = "") {
+		return String(value || "")
+			.trim()
+			.replace(/^<|>$/g, "")
+			.replace(/^["']|["']$/g, "");
+	}
+
+	function isTerminalPublicSafUri(value = "") {
+		return value.startsWith("content://com.foxdebug.acode.documents/tree/");
+	}
+
+	function convertToTerminalCwd(value = "", allowRawFallback = false) {
+		const normalized = normalizePathInput(value);
+		if (!normalized) return "";
+
+		if (normalized === "~") return "/home";
+		if (normalized.startsWith("~/")) return `/home/${normalized.slice(2)}`;
+		if (normalized === "/home" || normalized.startsWith("/home/")) {
+			return normalized;
+		}
+		if (normalized === "/public" || normalized.startsWith("/public/")) {
+			return normalized;
+		}
+		if (isTerminalPublicSafUri(normalized)) {
+			return "/public";
+		}
+
+		const protocol = Url.getProtocol(normalized);
+		if (protocol && protocol !== "file:") {
+			return allowRawFallback ? normalized : "";
+		}
+
+		const { alpineRoot, publicDir } = getTerminalPaths();
+		const cleanValue = normalized.replace(/^file:\/\//, "");
+		if (cleanValue.startsWith(publicDir)) {
+			const suffix = cleanValue.slice(publicDir.length);
+			return suffix ? `/public${suffix}` : "/public";
+		}
+		if (cleanValue.startsWith(alpineRoot)) {
+			const suffix = cleanValue.slice(alpineRoot.length);
+			return suffix ? (suffix.startsWith("/") ? suffix : `/${suffix}`) : "/";
+		}
+		if (
+			cleanValue.startsWith("/sdcard") ||
+			cleanValue.startsWith("/storage") ||
+			cleanValue.startsWith("/data")
+		) {
+			return cleanValue;
+		}
+
+		return allowRawFallback ? normalized : "";
+	}
+
+	function normalizeSessionCwd(value = "") {
+		return convertToTerminalCwd(value, true);
+	}
+
+	function toFolderLabel(folder = {}) {
+		const title = normalizePathInput(folder.title || "");
+		if (title) return title;
+		const url = normalizePathInput(folder.url || "");
+		return Url.basename(url) || url || "Folder";
+	}
+
+	function getDirectorySelectionItems(currentCwd = "") {
+		const items = [
+			{
+				value: BROWSE_CWD_OPTION,
+				text: "Browse folder…",
+				icon: "folder_open",
+			},
+		];
+		const seenValues = new Set([BROWSE_CWD_OPTION]);
+		const normalizedCurrent = normalizeSessionCwd(currentCwd);
+
+		const pushItem = (value, text, icon = "folder") => {
+			if (!value || seenValues.has(value)) return;
+			seenValues.add(value);
+			items.push({
+				value,
+				text,
+				icon,
+			});
+		};
+
+		if (normalizedCurrent) {
+			const currentIsTerminalAccessible = Boolean(
+				convertToTerminalCwd(normalizedCurrent, false),
+			);
+			pushItem(
+				normalizedCurrent,
+				currentIsTerminalAccessible
+					? `Current value<br><small>${normalizedCurrent}</small>`
+					: `Current value<br><small>${normalizedCurrent} • terminal unavailable</small>`,
+				currentIsTerminalAccessible ? "radio_button_checked" : "warning",
+			);
+		}
+
+		addedFolder.forEach((folder) => {
+			const rawUrl = normalizePathInput(folder?.url || "");
+			if (!rawUrl) return;
+
+			const converted = convertToTerminalCwd(rawUrl, false);
+			const cwdValue = converted || normalizeSessionCwd(rawUrl);
+			if (!cwdValue) return;
+			const label = toFolderLabel(folder);
+			pushItem(
+				cwdValue,
+				converted
+					? `${label}<br><small>${cwdValue}</small>`
+					: `${label}<br><small>${cwdValue} • terminal unavailable</small>`,
+				converted ? "folder" : "warning",
+			);
+		});
+
+		return items;
+	}
+
+	async function handlePickWorkingDirectory(currentCwd = "") {
+		try {
+			const selected = await select(
+				"Select Working Directory",
+				getDirectorySelectionItems(currentCwd),
+				{
+					textTransform: false,
+				},
+			);
+			if (!selected) return null;
+
+			if (selected === BROWSE_CWD_OPTION) {
+				const folder = await FileBrowser("folder", "Select working directory");
+				const nextCwd = normalizeSessionCwd(folder?.url || "");
+				if (!nextCwd) {
+					toast("Failed to resolve selected folder");
+					return null;
+				}
+				if (!convertToTerminalCwd(folder?.url || "", false)) {
+					toast(
+						"Selected folder supports ACP file access, but terminal tools may be unavailable",
+					);
+				}
+				return nextCwd;
+			}
+
+			return normalizeSessionCwd(selected);
+		} catch (error) {
+			if (!error) return null;
+			console.error("[ACP] Failed to pick working directory:", error);
+			toast(error?.message || "Failed to choose working directory");
+			return null;
 		}
 	}
 
@@ -1018,7 +1183,7 @@ export default function AcpPageInclude() {
 	}
 
 	async function loadSelectedSession(entry) {
-		const cwd = entry.cwd || $form.getValues().cwd || "";
+		const cwd = normalizeSessionCwd(entry.cwd || $form.getValues().cwd || "");
 		if (!cwd) {
 			setFormStatus("This session is missing a working directory");
 			return;
