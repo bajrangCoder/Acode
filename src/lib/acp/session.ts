@@ -34,8 +34,10 @@ export class ACPSession {
 	updatedAt: string | null = null;
 
 	private agentTextBuffer = "";
+	private thoughtTextBuffer = "";
 	private userTextBuffer = "";
 	private currentAgentMessageId: string | null = null;
+	private currentThoughtMessageId: string | null = null;
 	private currentUserMessageId: string | null = null;
 	private currentPlanEntryId: string | null = null;
 	private listeners = new Map<SessionEventType, Set<SessionEventHandler>>();
@@ -71,6 +73,7 @@ export class ACPSession {
 
 	addUserMessage(content: ContentBlock[]): ChatMessage {
 		this.closeCurrentAgentMessage();
+		this.closeCurrentThoughtMessage();
 		this.closeCurrentUserMessage();
 
 		const message: ChatMessage = {
@@ -98,6 +101,9 @@ export class ACPSession {
 			case "agent_message_chunk":
 				this.handleMessageChunk("agent", update.content);
 				break;
+			case "agent_thought_chunk":
+				this.handleMessageChunk("thought", update.content);
+				break;
 			case "tool_call":
 				this.handleToolCall(update);
 				break;
@@ -124,6 +130,7 @@ export class ACPSession {
 
 	finishAgentTurn(): void {
 		this.closeCurrentAgentMessage();
+		this.closeCurrentThoughtMessage();
 		this.closeCurrentUserMessage();
 		this.currentPlanEntryId = null;
 		this.emit("session_end", null);
@@ -139,32 +146,49 @@ export class ACPSession {
 	): void {
 		let message: ChatMessage;
 		if (role === "agent") {
+			this.closeCurrentThoughtMessage();
 			this.closeCurrentUserMessage();
 			message = this.getOrCreateCurrentAgentMessage();
+		} else if (role === "thought") {
+			this.closeCurrentAgentMessage();
+			this.closeCurrentUserMessage();
+			message = this.getOrCreateCurrentThoughtMessage();
 		} else {
 			this.closeCurrentAgentMessage();
+			this.closeCurrentThoughtMessage();
 			message = this.getOrCreateCurrentUserMessage();
 		}
 		if (!message) return;
 
-		if (role === "agent") {
+		if (role === "agent" || role === "thought") {
 			message.streaming = true;
 		}
 
 		if (content.type === "text") {
 			if (role === "agent") {
 				this.agentTextBuffer += content.text;
+			} else if (role === "thought") {
+				this.thoughtTextBuffer += content.text;
 			} else {
 				this.userTextBuffer += content.text;
 			}
 			const existingText = message.content.find((c) => c.type === "text");
 			if (existingText && existingText.type === "text") {
 				existingText.text =
-					role === "agent" ? this.agentTextBuffer : this.userTextBuffer;
+					role === "agent"
+						? this.agentTextBuffer
+						: role === "thought"
+							? this.thoughtTextBuffer
+							: this.userTextBuffer;
 			} else {
 				message.content.push({
 					type: "text",
-					text: role === "agent" ? this.agentTextBuffer : this.userTextBuffer,
+					text:
+						role === "agent"
+							? this.agentTextBuffer
+							: role === "thought"
+								? this.thoughtTextBuffer
+								: this.userTextBuffer,
 				});
 			}
 		} else {
@@ -178,6 +202,7 @@ export class ACPSession {
 		update: SessionUpdate & { sessionUpdate: "tool_call" },
 	): void {
 		this.closeCurrentAgentMessage();
+		this.closeCurrentThoughtMessage();
 		this.closeCurrentUserMessage();
 
 		const toolCall: ToolCall = {
@@ -237,6 +262,7 @@ export class ACPSession {
 	}
 
 	private handlePlan(entries: PlanEntry[]): void {
+		this.closeCurrentThoughtMessage();
 		this.plan = {
 			entries,
 			timestamp: this.plan?.timestamp || Date.now(),
@@ -309,6 +335,10 @@ export class ACPSession {
 			this.currentAgentMessageId = message.id;
 			this.agentTextBuffer = "";
 		}
+		if (role === "thought") {
+			this.currentThoughtMessageId = message.id;
+			this.thoughtTextBuffer = "";
+		}
 		if (role === "user") {
 			this.currentUserMessageId = message.id;
 			this.userTextBuffer = "";
@@ -322,6 +352,14 @@ export class ACPSession {
 		);
 		if (existing) return existing;
 		return this.createMessage("agent", [], true);
+	}
+
+	private getOrCreateCurrentThoughtMessage(): ChatMessage {
+		const existing = this.messages.find(
+			(message) => message.id === this.currentThoughtMessageId,
+		);
+		if (existing) return existing;
+		return this.createMessage("thought", [], true);
 	}
 
 	private getOrCreateCurrentUserMessage(): ChatMessage {
@@ -347,6 +385,21 @@ export class ACPSession {
 		this.agentTextBuffer = "";
 	}
 
+	private closeCurrentThoughtMessage(): void {
+		if (!this.currentThoughtMessageId) return;
+
+		const message = this.messages.find(
+			(entry) => entry.id === this.currentThoughtMessageId,
+		);
+		if (message) {
+			message.streaming = false;
+			this.emit("message_update", message);
+		}
+
+		this.currentThoughtMessageId = null;
+		this.thoughtTextBuffer = "";
+	}
+
 	private closeCurrentUserMessage(): void {
 		if (!this.currentUserMessageId) return;
 		this.currentUserMessageId = null;
@@ -357,8 +410,10 @@ export class ACPSession {
 		this.listeners.clear();
 		this.pendingPermissions.length = 0;
 		this.currentAgentMessageId = null;
+		this.currentThoughtMessageId = null;
 		this.currentUserMessageId = null;
 		this.agentTextBuffer = "";
+		this.thoughtTextBuffer = "";
 		this.userTextBuffer = "";
 	}
 }

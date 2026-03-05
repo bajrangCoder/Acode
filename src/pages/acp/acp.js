@@ -27,6 +27,7 @@ export default function AcpPageInclude() {
 	let connectedUrl = "";
 	let currentSessionUrl = "";
 	const timelineElements = new Map();
+	let pendingThinkingElement = null;
 	let isPrompting = false;
 
 	// ─── Connection Form ───
@@ -93,6 +94,7 @@ export default function AcpPageInclude() {
 	function switchToChat(agentName) {
 		currentView = "chat";
 		timelineElements.clear();
+		pendingThinkingElement = null;
 
 		setChatAgentName(agentName);
 
@@ -119,6 +121,7 @@ export default function AcpPageInclude() {
 	function switchToConnect() {
 		currentView = "connect";
 		timelineElements.clear();
+		pendingThinkingElement = null;
 		$form.setConnecting(false);
 		setFormStatus("");
 		setPrompting(false);
@@ -808,7 +811,10 @@ export default function AcpPageInclude() {
 
 		const messages = client.session.messages;
 		for (let index = messages.length - 1; index >= 0; index--) {
-			if (messages[index].role === "agent") {
+			if (
+				messages[index].role === "agent" ||
+				messages[index].role === "thought"
+			) {
 				return messages[index].id;
 			}
 		}
@@ -825,7 +831,7 @@ export default function AcpPageInclude() {
 					message: entry.message,
 					cwd,
 					isResponding:
-						entry.message.role === "agent" &&
+						entry.message.role !== "user" &&
 						entry.message.id === activeAgentMessageId,
 				});
 			case "tool_call":
@@ -834,6 +840,59 @@ export default function AcpPageInclude() {
 				return PlanCard({ plan: entry.plan });
 			default:
 				return null;
+		}
+	}
+
+	function hasAgentActivitySinceLatestUser(entries) {
+		for (let index = entries.length - 1; index >= 0; index--) {
+			const entry = entries[index];
+			if (entry.type !== "message") return true;
+			if (entry.message.role === "user") return false;
+			if (entry.message.role === "agent" || entry.message.role === "thought") {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function syncPendingThinkingIndicator($messages, entries) {
+		const shouldShow =
+			isPrompting && !hasAgentActivitySinceLatestUser(entries || []);
+
+		if (!shouldShow) {
+			if (pendingThinkingElement) {
+				pendingThinkingElement.remove();
+				pendingThinkingElement = null;
+			}
+			return;
+		}
+
+		const placeholderMessage = {
+			id: "__acp_pending_thinking__",
+			role: "thought",
+			content: [{ type: "text", text: "Thinking…" }],
+			timestamp: Date.now(),
+			streaming: true,
+		};
+		const cwd = client.session?.cwd || $form.getValues().cwd || "";
+
+		if (!pendingThinkingElement) {
+			pendingThinkingElement = ChatMessage({
+				message: placeholderMessage,
+				cwd,
+				isResponding: true,
+			});
+			pendingThinkingElement.classList.add("acp-thinking-placeholder");
+		} else {
+			pendingThinkingElement.update({
+				message: placeholderMessage,
+				cwd,
+				isResponding: true,
+			});
+		}
+
+		if (pendingThinkingElement.parentNode !== $messages) {
+			$messages.append(pendingThinkingElement);
 		}
 	}
 
@@ -856,7 +915,7 @@ export default function AcpPageInclude() {
 				cwd: client.session?.cwd || $form.getValues().cwd || "",
 				isResponding:
 					entry.type === "message" &&
-					entry.message.role === "agent" &&
+					entry.message.role !== "user" &&
 					entry.message.id === activeAgentMessageId,
 			};
 			if (timelineElements.has(entry.entryId)) {
@@ -868,6 +927,7 @@ export default function AcpPageInclude() {
 				$messages.append($entry);
 			}
 		});
+		syncPendingThinkingIndicator($messages, entries);
 
 		$messages.scrollTop = $messages.scrollHeight;
 		saveCurrentSessionHistory();

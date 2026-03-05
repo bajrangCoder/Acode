@@ -342,7 +342,7 @@ export default function ChatMessage({
 	};
 
 	function appendTextBlock(text) {
-		if (message.role === "agent") {
+		if (message.role === "agent" || message.role === "thought") {
 			const $markdown = <div className="acp-markdown-block md"></div>;
 			$markdown.innerHTML = renderMarkdown(text);
 			$content.append($markdown);
@@ -434,7 +434,12 @@ export default function ChatMessage({
 				</span>,
 			);
 		}
-		$role.textContent = message.role === "user" ? "You" : "Agent";
+		$role.textContent =
+			message.role === "user"
+				? "You"
+				: message.role === "thought"
+					? "Thinking"
+					: "Agent";
 		$meta.hidden = $meta.childElementCount === 0;
 		const timestamp = new Date(message.timestamp);
 		$el.title = Number.isNaN(timestamp.getTime())
