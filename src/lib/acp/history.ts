@@ -1,5 +1,17 @@
 const STORAGE_KEY = "acpSessionHistory";
 const MAX_ENTRIES = 30;
+const VALID_STOP_REASONS = new Set([
+	"end_turn",
+	"max_tokens",
+	"max_turn_requests",
+	"refusal",
+	"cancelled",
+]);
+
+export interface ACPHistoryTurnStop {
+	stopReason: string;
+	timestamp: number;
+}
 
 export interface ACPHistoryEntry {
 	sessionId: string;
@@ -8,6 +20,7 @@ export interface ACPHistoryEntry {
 	agentName: string;
 	title: string;
 	preview: string;
+	turnStops: ACPHistoryTurnStop[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -27,6 +40,24 @@ type ACPHistorySaveInput = Partial<ACPHistoryEntry> &
 function normalizeEntry(entry: Partial<ACPHistoryEntry> = {}): ACPHistoryEntry {
 	const createdAt = entry.createdAt || new Date().toISOString();
 	const updatedAt = entry.updatedAt || createdAt;
+	const turnStops = Array.isArray(entry.turnStops)
+		? entry.turnStops
+				.map((item) => {
+					const stopReason =
+						typeof item?.stopReason === "string" ? item.stopReason.trim() : "";
+					if (!VALID_STOP_REASONS.has(stopReason)) return null;
+
+					const timestamp = Number.isFinite(item?.timestamp)
+						? Number(item.timestamp)
+						: Date.now();
+
+					return {
+						stopReason,
+						timestamp,
+					};
+				})
+				.filter((item): item is ACPHistoryTurnStop => Boolean(item))
+		: [];
 
 	return {
 		sessionId:
@@ -37,6 +68,7 @@ function normalizeEntry(entry: Partial<ACPHistoryEntry> = {}): ACPHistoryEntry {
 			typeof entry.agentName === "string" ? entry.agentName.trim() : "",
 		title: typeof entry.title === "string" ? entry.title.trim() : "",
 		preview: typeof entry.preview === "string" ? entry.preview.trim() : "",
+		turnStops,
 		createdAt,
 		updatedAt,
 	};
@@ -100,6 +132,10 @@ const acpHistory = {
 				agentName: normalized.agentName || current.agentName,
 				title: normalized.title || current.title,
 				preview: normalized.preview || current.preview,
+				turnStops:
+					normalized.turnStops.length > 0
+						? normalized.turnStops
+						: current.turnStops,
 				createdAt: current.createdAt,
 				updatedAt: normalized.updatedAt || new Date().toISOString(),
 			};

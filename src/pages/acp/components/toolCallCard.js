@@ -21,10 +21,16 @@ function renderUnknownValue(value) {
 export default function ToolCallCard({ toolCall }) {
 	const currentStatus = toolCall.status || ToolCallStatus.PENDING;
 	const isOpen = {
-		value:
-			currentStatus === ToolCallStatus.IN_PROGRESS ||
-			Boolean(toolCall.content?.length),
+		value: false,
 	};
+	let hasUserToggled = false;
+
+	function computeAutoOpen(nextToolCall = toolCall) {
+		return (
+			nextToolCall.status === ToolCallStatus.IN_PROGRESS ||
+			Boolean(nextToolCall.content?.length)
+		);
+	}
 
 	function spinnerClass(status) {
 		if (status === ToolCallStatus.IN_PROGRESS)
@@ -52,6 +58,11 @@ export default function ToolCallCard({ toolCall }) {
 		></span>
 	);
 	const $body = <div className="acp-tool-body"></div>;
+
+	function applyOpenState() {
+		$body.classList.toggle("open", isOpen.value);
+		$chevron.classList.toggle("open", isOpen.value);
+	}
 
 	function renderBody() {
 		$body.innerHTML = "";
@@ -127,9 +138,9 @@ export default function ToolCallCard({ toolCall }) {
 		<div
 			className="acp-tool-header"
 			onclick={() => {
+				hasUserToggled = true;
 				isOpen.value = !isOpen.value;
-				$body.classList.toggle("open", isOpen.value);
-				$chevron.classList.toggle("open", isOpen.value);
+				applyOpenState();
 				if (isOpen.value) renderBody();
 			}}
 		>
@@ -151,8 +162,8 @@ export default function ToolCallCard({ toolCall }) {
 		</div>
 	);
 
-	$body.classList.toggle("open", isOpen.value);
-	$chevron.classList.toggle("open", isOpen.value);
+	isOpen.value = computeAutoOpen(toolCall);
+	applyOpenState();
 	renderCardMeta();
 	if (isOpen.value) renderBody();
 
@@ -170,20 +181,9 @@ export default function ToolCallCard({ toolCall }) {
 		const $kindEl = $header.querySelector(".acp-tool-kind");
 		if ($kindEl) $kindEl.textContent = `Using tool: ${toolCall.kind || "tool"}`;
 
-		if (
-			toolCall.status === ToolCallStatus.COMPLETED ||
-			toolCall.status === ToolCallStatus.FAILED
-		) {
-			isOpen.value = false;
-			$body.classList.remove("open");
-			$chevron.classList.remove("open");
-		} else if (
-			toolCall.status === ToolCallStatus.IN_PROGRESS ||
-			(toolCall.content?.length && !$body.classList.contains("open"))
-		) {
-			isOpen.value = true;
-			$body.classList.add("open");
-			$chevron.classList.add("open");
+		if (!hasUserToggled) {
+			isOpen.value = computeAutoOpen(toolCall);
+			applyOpenState();
 		}
 		renderCardMeta();
 		if (isOpen.value) renderBody();

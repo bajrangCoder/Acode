@@ -16,6 +16,7 @@ import AgentForm from "./components/agentForm";
 import ChatMessage from "./components/chatMessage";
 import PermissionDialog from "./components/permissionDialog";
 import PlanCard from "./components/planCard";
+import StopReasonCard from "./components/stopReasonCard";
 import ToolCallCard from "./components/toolCallCard";
 
 export default function AcpPageInclude() {
@@ -27,8 +28,9 @@ export default function AcpPageInclude() {
 	let connectedUrl = "";
 	let currentSessionUrl = "";
 	const timelineElements = new Map();
-	let pendingThinkingElement = null;
+	let pendingTurnIndicatorElement = null;
 	let isPrompting = false;
+	let activePromptSessionId = null;
 
 	// ─── Connection Form ───
 	const $form = AgentForm({
@@ -94,7 +96,7 @@ export default function AcpPageInclude() {
 	function switchToChat(agentName) {
 		currentView = "chat";
 		timelineElements.clear();
-		pendingThinkingElement = null;
+		pendingTurnIndicatorElement = null;
 
 		setChatAgentName(agentName);
 
@@ -121,7 +123,7 @@ export default function AcpPageInclude() {
 	function switchToConnect() {
 		currentView = "connect";
 		timelineElements.clear();
-		pendingThinkingElement = null;
+		pendingTurnIndicatorElement = null;
 		$form.setConnecting(false);
 		setFormStatus("");
 		setPrompting(false);
@@ -652,8 +654,19 @@ export default function AcpPageInclude() {
 			agentName: client.agentName,
 			title: session.title || "",
 			preview: getSessionPreview(),
+			turnStops: session.turnStops || [],
 			updatedAt: session.updatedAt || new Date().toISOString(),
 		});
+	}
+
+	function restorePersistedTurnStops(historyEntry) {
+		const session = client.session;
+		if (!session || !historyEntry) return;
+		const turnStops = Array.isArray(historyEntry.turnStops)
+			? historyEntry.turnStops
+			: [];
+		if (!turnStops.length) return;
+		session.setPersistedTurnStops(turnStops);
 	}
 
 	function getSessionHistoryEntries() {
@@ -732,8 +745,10 @@ export default function AcpPageInclude() {
 			updateStatusDot("connecting");
 
 			await client.loadSession(entry.sessionId, cwd);
+			client.session?.finishAgentTurn();
 			currentSessionUrl = entry.url;
 			setChatAgentName(entry.agentName || client.agentName);
+			restorePersistedTurnStops(entry);
 			saveCurrentSessionHistory();
 			syncTimeline();
 			updateStatusDot("connected");
@@ -793,6 +808,7 @@ export default function AcpPageInclude() {
 		},
 	) {
 		isPrompting = value;
+		activePromptSessionId = value ? client.session?.sessionId || null : null;
 		if (elements.$sendBtn) {
 			elements.$sendBtn.style.display = value ? "none" : "flex";
 		}
@@ -806,94 +822,73 @@ export default function AcpPageInclude() {
 	}
 
 	// ─── Event Handlers ───
-	function getActiveAgentMessageId() {
-		if (!isPrompting || !client.session) return null;
-
-		const messages = client.session.messages;
-		for (let index = messages.length - 1; index >= 0; index--) {
-			if (
-				messages[index].role === "agent" ||
-				messages[index].role === "thought"
-			) {
-				return messages[index].id;
-			}
-		}
-
-		return null;
-	}
-
 	function createTimelineElement(entry) {
 		const cwd = client.session?.cwd || $form.getValues().cwd || "";
-		const activeAgentMessageId = getActiveAgentMessageId();
 		switch (entry.type) {
 			case "message":
 				return ChatMessage({
 					message: entry.message,
 					cwd,
 					isResponding:
-						entry.message.role !== "user" &&
-						entry.message.id === activeAgentMessageId,
+						entry.message.role !== "user" && Boolean(entry.message.streaming),
 				});
 			case "tool_call":
 				return ToolCallCard({ toolCall: entry.toolCall });
 			case "plan":
 				return PlanCard({ plan: entry.plan });
+			case "turn_stop":
+				return StopReasonCard({ turnStop: entry.turnStop });
 			default:
 				return null;
 		}
 	}
 
-	function hasAgentActivitySinceLatestUser(entries) {
-		for (let index = entries.length - 1; index >= 0; index--) {
-			const entry = entries[index];
-			if (entry.type !== "message") return true;
-			if (entry.message.role === "user") return false;
-			if (entry.message.role === "agent" || entry.message.role === "thought") {
+	function hasStreamingAgentMessage(entries) {
+		return entries.some((entry) => {
+			if (entry.type !== "message") return false;
+			if (entry.message.role !== "agent" && entry.message.role !== "thought") {
+				return false;
+			}
+			if (entry.message.streaming) {
 				return true;
 			}
-		}
-		return false;
+			return false;
+		});
 	}
 
-	function syncPendingThinkingIndicator($messages, entries) {
+	function buildPendingTurnIndicator() {
+		return (
+			<div className="acp-pending-turn" title="Agent is responding">
+				<span className="acp-pending-dot"></span>
+				<span className="acp-pending-dot"></span>
+				<span className="acp-pending-dot"></span>
+				<span className="acp-pending-label">Responding…</span>
+			</div>
+		);
+	}
+
+	function syncPendingTurnIndicator($messages, entries) {
+		const currentSessionId = client.session?.sessionId || null;
 		const shouldShow =
-			isPrompting && !hasAgentActivitySinceLatestUser(entries || []);
+			isPrompting &&
+			Boolean(activePromptSessionId) &&
+			activePromptSessionId === currentSessionId &&
+			!hasStreamingAgentMessage(entries || []);
 
 		if (!shouldShow) {
-			if (pendingThinkingElement) {
-				pendingThinkingElement.remove();
-				pendingThinkingElement = null;
+			if (pendingTurnIndicatorElement) {
+				pendingTurnIndicatorElement.remove();
+				pendingTurnIndicatorElement = null;
 			}
 			return;
 		}
 
-		const placeholderMessage = {
-			id: "__acp_pending_thinking__",
-			role: "thought",
-			content: [{ type: "text", text: "Thinking…" }],
-			timestamp: Date.now(),
-			streaming: true,
-		};
-		const cwd = client.session?.cwd || $form.getValues().cwd || "";
-
-		if (!pendingThinkingElement) {
-			pendingThinkingElement = ChatMessage({
-				message: placeholderMessage,
-				cwd,
-				isResponding: true,
-			});
-			pendingThinkingElement.classList.add("acp-thinking-placeholder");
-		} else {
-			pendingThinkingElement.update({
-				message: placeholderMessage,
-				cwd,
-				isResponding: true,
-			});
+		if (!pendingTurnIndicatorElement) {
+			pendingTurnIndicatorElement = buildPendingTurnIndicator();
 		}
 
-		if (pendingThinkingElement.parentNode !== $messages) {
-			$messages.append(pendingThinkingElement);
-		}
+		// Always append so it stays as the latest item even as new entries stream in.
+		$messages.append(pendingTurnIndicatorElement);
 	}
 
 	function syncTimeline() {
@@ -908,7 +903,6 @@ export default function AcpPageInclude() {
 			if ($empty) $empty.remove();
 		}
 
-		const activeAgentMessageId = getActiveAgentMessageId();
 		entries.forEach((entry) => {
 			const entryWithContext = {
 				...entry,
@@ -916,7 +910,7 @@ export default function AcpPageInclude() {
 				isResponding:
 					entry.type === "message" &&
 					entry.message.role !== "user" &&
-					entry.message.id === activeAgentMessageId,
+					Boolean(entry.message.streaming),
 			};
 			if (timelineElements.has(entry.entryId)) {
 				timelineElements.get(entry.entryId).update(entryWithContext);
@@ -927,7 +921,7 @@ export default function AcpPageInclude() {
 				$messages.append($entry);
 			}
 		});
-		syncPendingThinkingIndicator($messages, entries);
+		syncPendingTurnIndicator($messages, entries);
 
 		$messages.scrollTop = $messages.scrollHeight;
 		saveCurrentSessionHistory();

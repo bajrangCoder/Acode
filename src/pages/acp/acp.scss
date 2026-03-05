@@ -818,6 +818,45 @@
 		opacity: 0.9;
 	}
 
+	.acp-pending-turn {
+		align-self: flex-start;
+		flex-shrink: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		width: fit-content;
+		max-width: 100%;
+		padding: 6px 10px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--active-color), transparent 88%);
+		color: var(--active-color);
+		margin: 2px 0;
+		animation: acp-slide-in 0.2s ease;
+
+		.acp-pending-dot {
+			width: 5px;
+			height: 5px;
+			border-radius: 50%;
+			background: currentColor;
+			animation: acp-streaming-pulse 1.2s ease-in-out infinite;
+
+			&:nth-child(2) {
+				animation-delay: 0.16s;
+			}
+
+			&:nth-child(3) {
+				animation-delay: 0.32s;
+			}
+		}
+
+		.acp-pending-label {
+			font-size: 0.72rem;
+			font-weight: 600;
+			letter-spacing: 0.01em;
+			white-space: nowrap;
+		}
+	}
+
 	/* ── Tool Call Card ── */
 	.acp-tool-call {
 		border-radius: 12px;
@@ -1000,6 +1039,52 @@
 			}
 		}
 
+	}
+
+	/* ── Stop Reason ── */
+	.acp-stop-reason {
+		border-radius: 10px;
+		margin: 2px 0;
+		padding: 10px 12px;
+		border: 1px solid
+			color-mix(in srgb, var(--secondary-text-color), transparent 75%);
+		background: color-mix(
+			in srgb,
+			var(--popup-background-color),
+			var(--secondary-text-color) 4%
+		);
+		align-self: stretch;
+		flex-shrink: 0;
+		animation: acp-slide-in 0.25s ease;
+
+		.acp-stop-reason-title {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			font-size: 0.75rem;
+			font-weight: 700;
+			letter-spacing: 0.02em;
+			color: var(--secondary-text-color);
+		}
+
+		.acp-stop-reason-label {
+			text-transform: uppercase;
+			opacity: 0.75;
+		}
+
+		.acp-stop-reason-value {
+			font-family: var(--editor-font-family, monospace);
+			font-weight: 600;
+			opacity: 0.55;
+		}
+
+		.acp-stop-reason-desc {
+			margin-top: 4px;
+			font-size: 0.76rem;
+			line-height: 1.4;
+			color: var(--secondary-text-color);
+			opacity: 0.55;
+		}
 	}
 
 	/* ── Plan ── */

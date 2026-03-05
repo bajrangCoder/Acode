@@ -424,7 +424,7 @@ export default function ChatMessage({
 
 	function renderMeta() {
 		$meta.innerHTML = "";
-		if (messageResponding) {
+		if (messageResponding && message.role === "agent") {
 			$meta.append(
 				<span className="acp-streaming-indicator">
 					<span className="acp-streaming-dot"></span>

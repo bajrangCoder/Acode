@@ -326,7 +326,7 @@ export class ACPClient {
 				}),
 			);
 
-			this._session.finishAgentTurn();
+			this._session.finishAgentTurn(result.stopReason);
 			return result;
 		} catch (error) {
 			this._session.finishAgentTurn();

@@ -7,10 +7,16 @@ import type {
 	ChatMessage,
 	Plan,
 	PlanEntry,
+	StopReason,
 	TimelineEntry,
 	ToolCall,
+	TurnStop,
 } from "./models";
-import { ToolCallStatus } from "./models";
+import { StopReason as StopReasons, ToolCallStatus } from "./models";
+
+const STOP_REASON_VALUES = new Set<StopReason>(
+	Object.values(StopReasons) as StopReason[],
+);
 
 type SessionEventType =
 	| "message_update"
@@ -29,6 +35,7 @@ export class ACPSession {
 	readonly messages: ChatMessage[] = [];
 	readonly timeline: TimelineEntry[] = [];
 	readonly toolCalls: Map<string, ToolCall> = new Map();
+	readonly turnStops: TurnStop[] = [];
 	plan: Plan | null = null;
 	title: string | null = null;
 	updatedAt: string | null = null;
@@ -128,16 +135,46 @@ export class ACPSession {
 		return this.pendingPermissions.shift();
 	}
 
-	finishAgentTurn(): void {
+	finishAgentTurn(stopReason?: StopReason | null): void {
 		this.closeCurrentAgentMessage();
 		this.closeCurrentThoughtMessage();
 		this.closeCurrentUserMessage();
 		this.currentPlanEntryId = null;
+		const normalizedStopReason = this.normalizeStopReason(stopReason);
+		if (this.shouldPersistStopReason(normalizedStopReason)) {
+			this.appendTurnStop(normalizedStopReason);
+		}
 		this.emit("session_end", null);
 	}
 
 	getToolCall(toolCallId: string): ToolCall | undefined {
 		return this.toolCalls.get(toolCallId);
+	}
+
+	setPersistedTurnStops(turnStops: TurnStop[]): void {
+		for (let index = this.timeline.length - 1; index >= 0; index--) {
+			if (this.timeline[index]?.type === "turn_stop") {
+				this.timeline.splice(index, 1);
+			}
+		}
+		this.turnStops.length = 0;
+
+		const normalizedStops = Array.isArray(turnStops)
+			? turnStops
+					.map((entry) => {
+						const stopReason = this.normalizeStopReason(entry?.stopReason);
+						if (!this.shouldPersistStopReason(stopReason)) return null;
+						const timestamp = Number.isFinite(entry?.timestamp)
+							? Number(entry.timestamp)
+							: Date.now();
+						return { stopReason, timestamp };
+					})
+					.filter((entry): entry is TurnStop => Boolean(entry))
+			: [];
+
+		normalizedStops.forEach((entry) => {
+			this.appendTurnStop(entry.stopReason, entry.timestamp);
+		});
 	}
 
 	private handleMessageChunk(
@@ -313,6 +350,35 @@ export class ACPSession {
 		this.emit("timeline_update", entry);
 	}
 
+	private appendTurnStop(
+		stopReason: StopReason,
+		timestamp: number = Date.now(),
+	): void {
+		const turnStop: TurnStop = {
+			stopReason,
+			timestamp,
+		};
+		this.turnStops.push(turnStop);
+		this.pushTimelineEntry({
+			entryId: this.nextTimelineId(),
+			type: "turn_stop",
+			turnStop,
+		});
+	}
+
+	private normalizeStopReason(value: unknown): StopReason | null {
+		if (typeof value !== "string") return null;
+		if (!STOP_REASON_VALUES.has(value as StopReason)) return null;
+		return value as StopReason;
+	}
+
+	private shouldPersistStopReason(
+		stopReason: StopReason | null,
+	): stopReason is StopReason {
+		if (!stopReason) return false;
+		return stopReason !== StopReasons.END_TURN;
+	}
+
 	private createMessage(
 		role: ChatMessage["role"],
 		content: ContentBlock[] = [],
@@ -415,5 +481,6 @@ export class ACPSession {
 		this.agentTextBuffer = "";
 		this.thoughtTextBuffer = "";
 		this.userTextBuffer = "";
+		this.turnStops.length = 0;
 	}
 }

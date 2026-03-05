@@ -1,5 +1,6 @@
 import type {
 	Plan as ACPPlan,
+	StopReason as ACPStopReason,
 	ToolCall as ACPToolCall,
 	ContentBlock,
 	PlanEntry,
@@ -40,6 +41,14 @@ export const ConnectionState = {
 	ERROR: "error",
 } as const;
 
+export const StopReason = {
+	END_TURN: "end_turn",
+	MAX_TOKENS: "max_tokens",
+	MAX_TURN_REQUESTS: "max_turn_requests",
+	REFUSAL: "refusal",
+	CANCELLED: "cancelled",
+} as const;
+
 export type ToolCallStatus =
 	(typeof ToolCallStatus)[keyof typeof ToolCallStatus];
 export type ToolKind = (typeof ToolKind)[keyof typeof ToolKind];
@@ -47,6 +56,7 @@ export type PlanEntryStatus =
 	(typeof PlanEntryStatus)[keyof typeof PlanEntryStatus];
 export type ConnectionState =
 	(typeof ConnectionState)[keyof typeof ConnectionState];
+export type StopReason = ACPStopReason;
 
 export interface ToolCall extends ACPToolCall {
 	timestamp?: number;
@@ -66,6 +76,11 @@ export interface ChatMessage {
 	streaming?: boolean;
 }
 
+export interface TurnStop {
+	stopReason: StopReason;
+	timestamp: number;
+}
+
 export type TimelineEntry =
 	| {
 			entryId: string;
@@ -81,4 +96,9 @@ export type TimelineEntry =
 			entryId: string;
 			type: "plan";
 			plan: Plan;
+	  }
+	| {
+			entryId: string;
+			type: "turn_stop";
+			turnStop: TurnStop;
 	  };
