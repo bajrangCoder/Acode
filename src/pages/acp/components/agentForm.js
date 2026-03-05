@@ -13,7 +13,11 @@ export default function AgentForm({
 	);
 
 	const $cwdInput = (
-		<input type="text" placeholder="e.g. /home/user/project (optional)" />
+		<input
+			type="text"
+			placeholder="e.g. /home/user/project (optional)"
+			value="/home"
+		/>
 	);
 
 	const $cwdPickBtn = (

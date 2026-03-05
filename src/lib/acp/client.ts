@@ -334,25 +334,26 @@ export class ACPClient {
 
 	async prompt(content: ContentBlock[]): Promise<PromptResult> {
 		this.ensureReady();
-		if (!this._session) {
+		const session = this._session;
+		if (!session) {
 			throw new Error("No active session. Call newSession() first.");
 		}
 
 		const connection = this.getConnection();
-		this._session.addUserMessage(content);
+		session.addUserMessage(content);
 
 		try {
 			const result = await this.runWhileConnected(
 				connection.prompt({
-					sessionId: this._session.sessionId,
+					sessionId: session.sessionId,
 					prompt: content,
 				}),
 			);
 
-			this._session.finishAgentTurn(result.stopReason);
+			session.finishAgentTurn(result.stopReason);
 			return result;
 		} catch (error) {
-			this._session.finishAgentTurn();
+			session.finishAgentTurn();
 			throw error;
 		}
 	}

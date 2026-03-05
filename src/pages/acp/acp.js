@@ -1,5 +1,6 @@
 import "./acp.scss";
 import fsOperation from "fileSystem";
+import { RequestError } from "@agentclientprotocol/sdk";
 import Page from "components/page";
 import toast from "components/toast";
 import select from "dialogs/select";
@@ -33,6 +34,10 @@ export default function AcpPageInclude() {
 	let isPrompting = false;
 	let activePromptSessionId = null;
 	const BROWSE_CWD_OPTION = "__acp_cwd_browse__";
+	const ACP_FS_READ_TEXT_FILE = "fs/read_text_file";
+	const ACP_FS_WRITE_TEXT_FILE = "fs/write_text_file";
+
+	registerFilesystemHandlers();
 
 	// ─── Connection Form ───
 	const $form = AgentForm({
@@ -60,7 +65,7 @@ export default function AcpPageInclude() {
 	async function handleConnect({ url, cwd }) {
 		if (!url) return;
 
-		const nextCwd = normalizeSessionCwd(cwd || "");
+		const nextCwd = normalizeSessionCwd(cwd || "/home");
 		$form.setValues({ url, cwd: nextCwd });
 		$form.setConnecting(true);
 		setFormStatus("");
@@ -84,6 +89,7 @@ export default function AcpPageInclude() {
 		const packageName = window.BuildInfo?.packageName || "com.foxdebug.acode";
 		const dataDir = `/data/user/0/${packageName}`;
 		return {
+			dataDir,
 			alpineRoot: `${dataDir}/files/alpine`,
 			publicDir: `${dataDir}/files/public`,
 		};
@@ -144,6 +150,251 @@ export default function AcpPageInclude() {
 
 	function normalizeSessionCwd(value = "") {
 		return convertToTerminalCwd(value, true);
+	}
+
+	function getSessionCwdForFs(sessionId = "") {
+		const activeSession = client.session;
+		if (activeSession?.sessionId === sessionId) {
+			return normalizeSessionCwd(activeSession.cwd || "");
+		}
+		return normalizeSessionCwd($form.getValues().cwd || "");
+	}
+
+	function resolveAgentPath(path = "", sessionId = "") {
+		const normalizedPath = normalizePathInput(path);
+		if (!normalizedPath) return "";
+
+		const sessionCwd = getSessionCwdForFs(sessionId);
+		const protocol = Url.getProtocol(normalizedPath);
+
+		if (protocol) {
+			if (protocol === "file:") {
+				return normalizedPath;
+			}
+			if (
+				protocol === "content:" ||
+				protocol === "ftp:" ||
+				protocol === "sftp:" ||
+				protocol === "http:" ||
+				protocol === "https:"
+			) {
+				return normalizedPath;
+			}
+			return "";
+		}
+
+		const agentPath = normalizedPath.startsWith("/")
+			? normalizedPath
+			: sessionCwd
+				? Url.join(sessionCwd, normalizedPath)
+				: "";
+		if (!agentPath) return "";
+
+		const { alpineRoot, publicDir } = getTerminalPaths();
+		if (agentPath === "~") {
+			return `file://${alpineRoot}/home`;
+		}
+		if (agentPath.startsWith("~/")) {
+			return `file://${alpineRoot}/home/${agentPath.slice(2)}`;
+		}
+		if (agentPath === "/public" || agentPath.startsWith("/public/")) {
+			const suffix = agentPath.slice("/public".length);
+			return `file://${publicDir}${suffix}`;
+		}
+		if (agentPath === "/home" || agentPath.startsWith("/home/")) {
+			return `file://${alpineRoot}${agentPath}`;
+		}
+		if (
+			agentPath.startsWith("/sdcard") ||
+			agentPath.startsWith("/storage") ||
+			agentPath.startsWith("/data")
+		) {
+			return `file://${agentPath}`;
+		}
+		if (agentPath.startsWith("/")) {
+			return `file://${alpineRoot}${agentPath}`;
+		}
+
+		return "";
+	}
+
+	function normalizeFsReadRange(value, { name, min = 1 } = {}) {
+		if (value == null) return null;
+		const num = Number(value);
+		if (!Number.isInteger(num) || num < min) {
+			throw RequestError.invalidParams(
+				{},
+				`${name || "value"} must be an integer >= ${min}`,
+			);
+		}
+		return num;
+	}
+
+	function sliceTextByLineRange(text = "", line, limit) {
+		if (line == null && limit == null) return text;
+		const allLines = String(text).split(/\r\n|\n|\r/);
+		const startLine = line || 1;
+		if (startLine > allLines.length) return "";
+		if (limit === 0) return "";
+		if (limit == null) {
+			return allLines.slice(startLine - 1).join("\n");
+		}
+		return allLines.slice(startLine - 1, startLine - 1 + limit).join("\n");
+	}
+
+	function getOpenEditorFile(uri = "") {
+		const manager = window.editorManager;
+		if (!manager?.getFile || !uri) return null;
+		const candidates = [uri];
+		try {
+			const decoded = decodeURIComponent(uri);
+			if (decoded && !candidates.includes(decoded)) candidates.push(decoded);
+		} catch {
+			/* ignore */
+		}
+
+		for (const candidate of candidates) {
+			const file = manager.getFile(candidate, "uri");
+			if (file) return file;
+		}
+		return null;
+	}
+
+	async function readFileTextFromFs(resolvedPath = "") {
+		const openFileRef = getOpenEditorFile(resolvedPath);
+		const unsavedContent = openFileRef?.session?.getValue?.();
+		if (typeof unsavedContent === "string") {
+			return unsavedContent;
+		}
+
+		const content = await fsOperation(resolvedPath).readFile("utf8");
+		if (typeof content === "string") return content;
+		if (content instanceof ArrayBuffer) {
+			return new TextDecoder().decode(content);
+		}
+		return String(content ?? "");
+	}
+
+	async function writeFileTextToFs(resolvedPath = "", content = "") {
+		const targetFs = fsOperation(resolvedPath);
+		const exists = await targetFs.exists();
+		if (exists) {
+			await targetFs.writeFile(content, "utf8");
+		} else {
+			const parentPath = Url.dirname(resolvedPath);
+			const filename = Url.basename(resolvedPath);
+			if (!parentPath || !filename) {
+				throw RequestError.invalidParams(
+					{},
+					`Invalid file path: ${resolvedPath}`,
+				);
+			}
+			await fsOperation(parentPath).createFile(filename, content);
+		}
+
+		const openFileRef = getOpenEditorFile(resolvedPath);
+		if (openFileRef?.type === "editor") {
+			openFileRef.session?.setValue?.(content);
+			openFileRef.isUnsaved = false;
+			openFileRef.markChanged = false;
+			await openFileRef.writeToCache?.();
+		}
+	}
+
+	function assertValidSessionRequest(sessionId = "") {
+		const activeSessionId = client.session?.sessionId;
+		if (!sessionId || !activeSessionId || sessionId !== activeSessionId) {
+			throw RequestError.invalidParams({}, "Invalid or inactive sessionId");
+		}
+	}
+
+	function toFsError(error, requestPath = "") {
+		const message = String(error?.message || error || "");
+		if (error instanceof RequestError) {
+			return error;
+		}
+		if (
+			/not found|no such file|path not found|does not exist|failed to resolve/i.test(
+				message,
+			)
+		) {
+			return RequestError.resourceNotFound(requestPath || undefined);
+		}
+		return RequestError.internalError(
+			{},
+			message || "Filesystem operation failed",
+		);
+	}
+
+	function registerFilesystemHandlers() {
+		client.registerRequestHandler(
+			ACP_FS_READ_TEXT_FILE,
+			async (params = {}) => {
+				try {
+					const sessionId = String(params?.sessionId || "");
+					assertValidSessionRequest(sessionId);
+
+					const rawPath = normalizePathInput(params?.path || "");
+					if (!rawPath) {
+						throw RequestError.invalidParams({}, "path is required");
+					}
+
+					const line = normalizeFsReadRange(params?.line, {
+						name: "line",
+						min: 1,
+					});
+					const limit = normalizeFsReadRange(params?.limit, {
+						name: "limit",
+						min: 0,
+					});
+					const resolvedPath = resolveAgentPath(rawPath, sessionId);
+					if (!resolvedPath) {
+						throw RequestError.invalidParams(
+							{},
+							`Unsupported filesystem path: ${rawPath}`,
+						);
+					}
+
+					const text = await readFileTextFromFs(resolvedPath);
+					return {
+						content: sliceTextByLineRange(text, line, limit),
+					};
+				} catch (error) {
+					throw toFsError(error, params?.path);
+				}
+			},
+		);
+
+		client.registerRequestHandler(
+			ACP_FS_WRITE_TEXT_FILE,
+			async (params = {}) => {
+				try {
+					const sessionId = String(params?.sessionId || "");
+					assertValidSessionRequest(sessionId);
+
+					const rawPath = normalizePathInput(params?.path || "");
+					if (!rawPath) {
+						throw RequestError.invalidParams({}, "path is required");
+					}
+					if (typeof params?.content !== "string") {
+						throw RequestError.invalidParams({}, "content must be a string");
+					}
+
+					const resolvedPath = resolveAgentPath(rawPath, sessionId);
+					if (!resolvedPath) {
+						throw RequestError.invalidParams(
+							{},
+							`Unsupported filesystem path: ${rawPath}`,
+						);
+					}
+
+					await writeFileTextToFs(resolvedPath, params.content);
+					return {};
+				} catch (error) {
+					throw toFsError(error, params?.path);
+				}
+			},
+		);
 	}
 
 	function toFolderLabel(folder = {}) {
@@ -1183,7 +1434,9 @@ export default function AcpPageInclude() {
 	}
 
 	async function loadSelectedSession(entry) {
-		const cwd = normalizeSessionCwd(entry.cwd || $form.getValues().cwd || "");
+		const cwd = normalizeSessionCwd(
+			entry.cwd || $form.getValues().cwd || "/home",
+		);
 		if (!cwd) {
 			setFormStatus("This session is missing a working directory");
 			return;
