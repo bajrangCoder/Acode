@@ -65,10 +65,11 @@ Working with packages:
 EOF
     fi
 
-    # Create acode CLI tool
-    if [ ! -e "$PREFIX/alpine/usr/local/bin/acode" ]; then
-        mkdir -p "$PREFIX/alpine/usr/local/bin"
-        cat <<'ACODE_CLI' > "$PREFIX/alpine/usr/local/bin/acode"
+    # Refresh the Acode CLI bridge only when its generated content changes.
+    mkdir -p "$PREFIX/alpine/usr/local/bin"
+    acode_cli_path="$PREFIX/alpine/usr/local/bin/acode"
+    acode_cli_tmp="$PREFIX/alpine/usr/local/bin/.acode.tmp"
+    cat <<'ACODE_CLI' > "$acode_cli_tmp"
 #!/bin/bash
 # acode - Open files/folders in Acode editor
 # Uses OSC escape sequences to communicate with the Acode terminal
@@ -76,13 +77,25 @@ EOF
 usage() {
     echo "Usage: acode [file/folder...]"
     echo ""
-    echo "Open files or folders in Acode editor."
+    echo "Open files, folders, or URLs in Acode."
     echo ""
     echo "Examples:"
     echo "  acode file.txt      # Open a file"
     echo "  acode .             # Open current folder"
     echo "  acode ~/project     # Open a folder"
+    echo "  acode https://...   # Open a URL"
     echo "  acode -h, --help    # Show this help"
+}
+
+is_url() {
+    case "$1" in
+        http://*|https://*|ftp://*|ftps://*|mailto:*|tel:*|sms:*|geo:*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 get_abs_path() {
@@ -121,6 +134,13 @@ open_in_acode() {
     printf '\e]7777;open;%s;%s\a' "$type" "$path"
 }
 
+open_url_in_acode() {
+    # Headless consumers like ACP auth can poll this file when no terminal is
+    # available to intercept OSC output.
+    printf '%s\n' "$1" > /tmp/.acode_open_url
+    printf '\e]7777;open;%s;%s\a' "url" "$1"
+}
+
 if [[ $# -eq 0 ]]; then
     open_in_acode "."
     exit 0
@@ -133,18 +153,27 @@ for arg in "$@"; do
             exit 0
             ;;
         *)
-            if [[ -e "$arg" ]]; then
+            if is_url "$arg"; then
+                open_url_in_acode "$arg"
+            elif [[ -e "$arg" ]]; then
                 open_in_acode "$arg"
             else
-                echo "Error: '$arg' does not exist" >&2
+                echo "Error: '$arg' does not exist or is not a supported URL" >&2
                 exit 1
             fi
             ;;
     esac
 done
 ACODE_CLI
-        chmod +x "$PREFIX/alpine/usr/local/bin/acode"
+    if [ ! -e "$acode_cli_path" ] || ! cmp -s "$acode_cli_tmp" "$acode_cli_path"; then
+        mv "$acode_cli_tmp" "$acode_cli_path"
+        chmod +x "$acode_cli_path"
+    else
+        rm -f "$acode_cli_tmp"
     fi
+
+    # Make xdg-open use the Acode CLI bridge inside the terminal environment.
+    ln -sfn acode "$PREFIX/alpine/usr/local/bin/xdg-open"
 
     # Create initrc if it doesn't exist
     #initrc runs in bash so we can use bash features 

@@ -667,12 +667,17 @@ class TerminalManager {
 		terminalComponent.onOscOpen = async (type, path) => {
 			if (!path) return;
 
-			// Convert proot path
-			const fileUri = this.convertProotPath(path);
-			// Extract folder/file name from normalized path
-			const name = this.getPathDisplayName(path);
-
 			try {
+				if (type === "url" || this.isExternalUrl(path)) {
+					system.openInBrowser(path);
+					return;
+				}
+
+				// Convert proot path
+				const fileUri = this.convertProotPath(path);
+				// Extract folder/file name from normalized path
+				const name = this.getPathDisplayName(path);
+
 				if (type === "folder") {
 					// Open folder in sidebar
 					await openFolder(fileUri, { name, saveState: true, listFiles: true });
@@ -992,6 +997,12 @@ class TerminalManager {
 		}
 
 		return normalized.pop() || "folder";
+	}
+
+	isExternalUrl(value) {
+		if (typeof value !== "string") return false;
+
+		return /^(https?|ftps?|mailto|tel|sms|geo):/i.test(value.trim());
 	}
 
 	shouldConfirmTerminalClose() {
