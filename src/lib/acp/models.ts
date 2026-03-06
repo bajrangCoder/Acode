@@ -2,6 +2,7 @@ import type {
 	Plan as ACPPlan,
 	StopReason as ACPStopReason,
 	ToolCall as ACPToolCall,
+	AvailableCommand,
 	ContentBlock,
 	PlanEntry,
 } from "@agentclientprotocol/sdk";
@@ -67,6 +68,7 @@ export interface Plan extends ACPPlan {
 }
 
 export type { PlanEntry };
+export type { AvailableCommand };
 
 export interface ChatMessage {
 	id: string;

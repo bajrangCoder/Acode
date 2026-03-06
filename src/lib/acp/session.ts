@@ -1,4 +1,5 @@
 import type {
+	AvailableCommand,
 	ContentBlock,
 	RequestPermissionRequest as PermissionRequest,
 	SessionUpdate,
@@ -23,6 +24,7 @@ type SessionEventType =
 	| "timeline_update"
 	| "tool_call"
 	| "tool_call_update"
+	| "available_commands"
 	| "plan"
 	| "permission_request"
 	| "session_end";
@@ -36,6 +38,7 @@ export class ACPSession {
 	readonly timeline: TimelineEntry[] = [];
 	readonly toolCalls: Map<string, ToolCall> = new Map();
 	readonly turnStops: TurnStop[] = [];
+	availableCommands: AvailableCommand[] = [];
 	plan: Plan | null = null;
 	title: string | null = null;
 	updatedAt: string | null = null;
@@ -120,6 +123,9 @@ export class ACPSession {
 			case "plan":
 				this.handlePlan(update.entries);
 				break;
+			case "available_commands_update":
+				this.handleAvailableCommandsUpdate(update.availableCommands);
+				break;
 			case "session_info_update":
 				this.handleSessionInfoUpdate(update);
 				break;
@@ -202,30 +208,13 @@ export class ACPSession {
 		}
 
 		if (content.type === "text") {
-			if (role === "agent") {
-				this.agentTextBuffer += content.text;
-			} else if (role === "thought") {
-				this.thoughtTextBuffer += content.text;
-			} else {
-				this.userTextBuffer += content.text;
-			}
-			const existingText = message.content.find((c) => c.type === "text");
-			if (existingText && existingText.type === "text") {
-				existingText.text =
-					role === "agent"
-						? this.agentTextBuffer
-						: role === "thought"
-							? this.thoughtTextBuffer
-							: this.userTextBuffer;
+			const lastBlock = message.content[message.content.length - 1];
+			if (lastBlock && lastBlock.type === "text") {
+				lastBlock.text += content.text;
 			} else {
 				message.content.push({
 					type: "text",
-					text:
-						role === "agent"
-							? this.agentTextBuffer
-							: role === "thought"
-								? this.thoughtTextBuffer
-								: this.userTextBuffer,
+					text: content.text,
 				});
 			}
 		} else {
@@ -323,6 +312,15 @@ export class ACPSession {
 		}
 
 		this.emit("plan", this.plan);
+	}
+
+	private handleAvailableCommandsUpdate(
+		availableCommands: AvailableCommand[] | null | undefined,
+	): void {
+		this.availableCommands = Array.isArray(availableCommands)
+			? [...availableCommands]
+			: [];
+		this.emit("available_commands", this.availableCommands);
 	}
 
 	private handleSessionInfoUpdate(update: {
@@ -475,6 +473,7 @@ export class ACPSession {
 	dispose(): void {
 		this.listeners.clear();
 		this.pendingPermissions.length = 0;
+		this.availableCommands = [];
 		this.currentAgentMessageId = null;
 		this.currentThoughtMessageId = null;
 		this.currentUserMessageId = null;

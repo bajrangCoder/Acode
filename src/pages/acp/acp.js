@@ -9,6 +9,7 @@ import { ACPClient } from "lib/acp/client";
 import acpHistory from "lib/acp/history";
 import { ConnectionState } from "lib/acp/models";
 import actionStack from "lib/actionStack";
+import files from "lib/fileList";
 import { addedFolder } from "lib/openFolder";
 import mimeType from "mime-types";
 import FileBrowser from "pages/fileBrowser";
@@ -741,6 +742,852 @@ export default function AcpPageInclude() {
 		let pendingAttachments = [];
 		let isSelectingAttachment = false;
 		let isUpdatingSessionControl = false;
+		let activeComposerHints = [];
+		let activeComposerHintIndex = 0;
+		let activeComposerTrigger = null;
+		let composerHintsRequestId = 0;
+		let currentCwdMentionCache = {
+			cwd: "",
+			items: [],
+		};
+		const ACP_BROWSE_FILE_OPTION = "__acp_browse_file__";
+		const ACP_EMPTY_HINT_OPTION = "__acp_empty_hint__";
+		const COMPOSER_MENTION_SELECTOR = ".acp-inline-mention-token";
+
+		function sanitizeInlineAttachmentLabel(value = "") {
+			const normalized = String(value || "")
+				.trim()
+				.replace(/^@+/, "")
+				.replace(/[\[\]\(\)]/g, " ")
+				.replace(/\s+/g, " ");
+			return normalized || "Attachment";
+		}
+
+		function getComposerSelection() {
+			const selection = window.getSelection();
+			if (!selection?.rangeCount) return null;
+			const range = selection.getRangeAt(0);
+			if (!$editor.contains(range.endContainer)) return null;
+			return {
+				selection,
+				range,
+			};
+		}
+
+		function focusComposerAtNode(node, offset = 0) {
+			const selection = window.getSelection();
+			if (!selection) return;
+			const range = document.createRange();
+			range.setStart(node, offset);
+			range.collapse(true);
+			selection.removeAllRanges();
+			selection.addRange(range);
+			$editor.focus();
+		}
+
+		function getOrCreateEditableTextNode() {
+			const lastChild = $editor.lastChild;
+			if (lastChild?.nodeType === Node.TEXT_NODE) {
+				return lastChild;
+			}
+			const textNode = document.createTextNode("");
+			$editor.append(textNode);
+			return textNode;
+		}
+
+		function normalizeIndexedUri(value = "") {
+			return String(value || "")
+				.trim()
+				.replace(/\/+$/, "")
+				.toLowerCase();
+		}
+
+		function isUriWithinScope(uri = "", scope = "") {
+			const normalizedUri = normalizeIndexedUri(uri);
+			const normalizedScope = normalizeIndexedUri(scope);
+			if (!normalizedUri || !normalizedScope) return false;
+			return (
+				normalizedUri === normalizedScope ||
+				normalizedUri.startsWith(`${normalizedScope}/`)
+			);
+		}
+
+		function toIndexedHintItem(item, source = "Workspace index") {
+			if (!item?.url) return null;
+			const isDirectory = Array.isArray(item.children);
+			return toFileHintItem({
+				uri: item.url,
+				name: item.name,
+				path: item.path || item.url,
+				description: isDirectory
+					? "Folder from workspace index"
+					: "File from workspace index",
+				source,
+				icon: isDirectory ? "folder" : "attach_file",
+			});
+		}
+
+		function collectIndexedDirectoryItems(tree) {
+			if (!tree) return [];
+			const children = Array.isArray(tree.children) ? tree.children : null;
+			if (!children?.length) {
+				const item = toIndexedHintItem(tree);
+				return item ? [item] : [];
+			}
+			return children
+				.map((child) => toIndexedHintItem(child))
+				.filter(Boolean)
+				.sort((a, b) => {
+					const directoryRankA = a.icon === "folder" ? 0 : 1;
+					const directoryRankB = b.icon === "folder" ? 0 : 1;
+					if (directoryRankA !== directoryRankB) {
+						return directoryRankA - directoryRankB;
+					}
+					return a.label.localeCompare(b.label);
+				});
+		}
+
+		function collectIndexedTreeItems(tree, items = [], depth = 0) {
+			if (!tree) return items;
+			const children = Array.isArray(tree.children) ? tree.children : null;
+			if (!children?.length) {
+				const item = toIndexedHintItem(tree);
+				if (item) {
+					items.push({
+						...item,
+						sortDepth: depth,
+					});
+				}
+				return items;
+			}
+			children.forEach((child) => {
+				const childItem = toIndexedHintItem(child);
+				if (childItem) {
+					items.push({
+						...childItem,
+						sortDepth: depth,
+					});
+				}
+				collectIndexedTreeItems(child, items, depth + 1);
+			});
+			return items;
+		}
+
+		function getComposerTriggerState() {
+			const selectionState = getComposerSelection();
+			if (!selectionState) return null;
+
+			let { endContainer, endOffset } = selectionState.range;
+			if (endContainer.nodeType !== Node.TEXT_NODE) {
+				const candidate =
+					endContainer.childNodes?.[Math.max(0, endOffset - 1)] ||
+					endContainer.lastChild ||
+					null;
+				if (candidate?.nodeType === Node.TEXT_NODE) {
+					endContainer = candidate;
+					endOffset = candidate.textContent?.length || 0;
+				} else {
+					return null;
+				}
+			}
+
+			const textNode = endContainer;
+			const beforeCursor = String(textNode.textContent || "").slice(
+				0,
+				endOffset,
+			);
+			const triggerMatch = /(^|\s)([@/])([^\s]*)$/.exec(beforeCursor);
+			if (!triggerMatch) return null;
+
+			const trigger = triggerMatch[2];
+			const query = triggerMatch[3] || "";
+			return {
+				trigger,
+				query,
+				node: textNode,
+				startOffset: endOffset - query.length - 1,
+				endOffset,
+			};
+		}
+
+		function replaceComposerTrigger(triggerState, replacement = "") {
+			if (!triggerState?.node) return null;
+			const textNode = triggerState.node;
+			const text = String(textNode.textContent || "");
+			const before = text.slice(0, triggerState.startOffset);
+			const after = text.slice(triggerState.endOffset);
+			textNode.textContent = `${before}${replacement}${after}`;
+			const nextOffset = before.length + replacement.length;
+			focusComposerAtNode(textNode, nextOffset);
+			$editor.dispatchEvent(new Event("input"));
+			return textNode;
+		}
+
+		function insertComposerText(text = "") {
+			const selectionState = getComposerSelection();
+			if (!selectionState) {
+				const textNode = getOrCreateEditableTextNode();
+				textNode.textContent += text;
+				focusComposerAtNode(textNode, textNode.textContent.length);
+				$editor.dispatchEvent(new Event("input"));
+				return;
+			}
+
+			const { selection, range } = selectionState;
+			range.deleteContents();
+			const textNode = document.createTextNode(text);
+			range.insertNode(textNode);
+			range.setStart(textNode, textNode.textContent.length);
+			range.collapse(true);
+			selection.removeAllRanges();
+			selection.addRange(range);
+			$editor.dispatchEvent(new Event("input"));
+		}
+
+		function insertComposerLineBreak() {
+			const selectionState = getComposerSelection();
+			if (!selectionState) {
+				const textNode = getOrCreateEditableTextNode();
+				textNode.parentNode?.insertBefore(
+					document.createElement("br"),
+					textNode,
+				);
+				focusComposerAtNode(textNode, 0);
+				$editor.dispatchEvent(new Event("input"));
+				return;
+			}
+
+			const { selection, range } = selectionState;
+			range.deleteContents();
+			const lineBreak = document.createElement("br");
+			const spacer = document.createTextNode("");
+			range.insertNode(spacer);
+			range.insertNode(lineBreak);
+			range.setStart(spacer, 0);
+			range.collapse(true);
+			selection.removeAllRanges();
+			selection.addRange(range);
+			$editor.dispatchEvent(new Event("input"));
+		}
+
+		function getAdjacentMentionToken(direction = "backward") {
+			const selectionState = getComposerSelection();
+			if (!selectionState?.range?.collapsed) return null;
+
+			let { endContainer, endOffset } = selectionState.range;
+			if (endContainer instanceof HTMLElement) {
+				const token = endContainer.closest(COMPOSER_MENTION_SELECTOR);
+				if (token) return token;
+			}
+
+			if (endContainer.nodeType === Node.TEXT_NODE) {
+				const text = String(endContainer.textContent || "");
+				if (direction === "backward" && endOffset !== 0) return null;
+				if (direction === "forward" && endOffset !== text.length) return null;
+				const sibling =
+					direction === "backward"
+						? endContainer.previousSibling
+						: endContainer.nextSibling;
+				return sibling instanceof HTMLElement &&
+					sibling.matches(COMPOSER_MENTION_SELECTOR)
+					? sibling
+					: null;
+			}
+
+			if (!(endContainer instanceof HTMLElement)) return null;
+			const childIndex = direction === "backward" ? endOffset - 1 : endOffset;
+			const sibling = endContainer.childNodes?.[childIndex] || null;
+			return sibling instanceof HTMLElement &&
+				sibling.matches(COMPOSER_MENTION_SELECTOR)
+				? sibling
+				: null;
+		}
+
+		function removeInlineMentionToken(token, direction = "backward") {
+			if (!(token instanceof HTMLElement)) return false;
+			const focusNode =
+				direction === "backward" ? token.previousSibling : token.nextSibling;
+			token.remove();
+			const textNode =
+				focusNode?.nodeType === Node.TEXT_NODE
+					? focusNode
+					: getOrCreateEditableTextNode();
+			const nextOffset =
+				direction === "backward" ? textNode.textContent?.length || 0 : 0;
+			focusComposerAtNode(textNode, nextOffset);
+			$editor.dispatchEvent(new Event("input"));
+			return true;
+		}
+
+		function createInlineMentionToken(attachment) {
+			const $icon = attachment.iconClass
+				? <span className={`${attachment.iconClass} acp-file-icon`}></span>
+				: <i className={`icon ${attachment.icon || "attach_file"}`}></i>;
+			const $token = (
+				<span
+					className="acp-inline-mention-token"
+					contenteditable="false"
+					data-uri={attachment.uri}
+					data-name={sanitizeInlineAttachmentLabel(attachment.name)}
+					data-mime-type={attachment.mimeType || ""}
+					data-size={
+						Number.isFinite(attachment.size) && attachment.size >= 0
+							? String(attachment.size)
+							: ""
+					}
+					data-icon-class={attachment.iconClass || ""}
+					data-icon={attachment.icon || "attach_file"}
+					title={attachment.uri}
+				>
+					{$icon}
+					<span className="acp-inline-mention-token-name">
+						{sanitizeInlineAttachmentLabel(attachment.name)}
+					</span>
+					<button
+						type="button"
+						className="acp-inline-mention-token-remove"
+						tabindex="-1"
+						onmousedown={(event) => {
+							event.preventDefault();
+							removeInlineMentionToken($token, "forward");
+						}}
+					>
+						<i className="icon clearclose"></i>
+					</button>
+				</span>
+			);
+			$token.contentEditable = "false";
+			return $token;
+		}
+
+		function insertInlineMentionToken(attachment, triggerState = null) {
+			const currentTrigger = triggerState || activeComposerTrigger;
+			if (!attachment?.uri || !currentTrigger?.node) return;
+
+			const textNode = currentTrigger.node;
+			const text = String(textNode.textContent || "");
+			const before = text.slice(0, currentTrigger.startOffset);
+			const after = text.slice(currentTrigger.endOffset);
+			const afterNode = document.createTextNode(after);
+			const tokenNode = createInlineMentionToken(attachment);
+
+			textNode.textContent = before;
+			textNode.parentNode?.insertBefore(tokenNode, textNode.nextSibling);
+			textNode.parentNode?.insertBefore(afterNode, tokenNode.nextSibling);
+			focusComposerAtNode(afterNode, 0);
+			$editor.dispatchEvent(new Event("input"));
+		}
+
+		function serializeComposerBlocks() {
+			const blocks = [];
+			const appendText = (value = "") => {
+				if (!value) return;
+				const lastBlock = blocks[blocks.length - 1];
+				if (lastBlock?.type === "text") {
+					lastBlock.text += value;
+					return;
+				}
+				blocks.push({
+					type: "text",
+					text: value,
+				});
+			};
+
+			Array.from($editor.childNodes).forEach((node) => {
+				if (node.nodeType === Node.TEXT_NODE) {
+					appendText(node.textContent || "");
+					return;
+				}
+				if (!(node instanceof HTMLElement)) return;
+				if (node.matches(COMPOSER_MENTION_SELECTOR)) {
+					blocks.push({
+						type: "resource_link",
+						name: sanitizeInlineAttachmentLabel(node.dataset.name || ""),
+						uri: String(node.dataset.uri || ""),
+						mimeType: node.dataset.mimeType || undefined,
+						size: node.dataset.size ? Number(node.dataset.size) : undefined,
+					});
+					return;
+				}
+				if (node.tagName === "BR") {
+					appendText("\n");
+				}
+			});
+
+			return blocks.filter((block) => {
+				return block.type !== "text" || block.text.length > 0;
+			});
+		}
+
+		function getComposerPlainText() {
+			return serializeComposerBlocks()
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("");
+		}
+
+		function toFileHintItem({
+			uri = "",
+			name = "",
+			path = "",
+			description = "",
+			source = "",
+			icon = "attach_file",
+		}) {
+			if (!uri) return null;
+			const label = sanitizeInlineAttachmentLabel(
+				name || Url.basename(uri) || uri,
+			);
+			const subText = description || path || uri;
+			return {
+				id: uri,
+				type: "mention",
+				value: uri,
+				label,
+				subText,
+				source,
+				icon,
+			};
+		}
+
+		function getActiveComposerCwd() {
+			return client.session?.cwd || $form.getValues().cwd || "";
+		}
+
+		async function getCurrentCwdMentionItems() {
+			const cwd = String(getActiveComposerCwd() || "").trim();
+			if (!cwd) return [];
+			if (currentCwdMentionCache.cwd === cwd) {
+				return currentCwdMentionCache.items;
+			}
+
+			try {
+				const resolvedCwd = resolveAgentPath(
+					cwd,
+					client.session?.sessionId || "",
+				);
+				if (!resolvedCwd) {
+					currentCwdMentionCache = {
+						cwd,
+						items: [],
+					};
+					return [];
+				}
+				const entries = await fsOperation(resolvedCwd).lsDir();
+				const items = (Array.isArray(entries) ? entries : [])
+					.map((entry) => {
+						const entryUri = String(entry?.url || "");
+						if (!entryUri) return null;
+						const isDirectory = Boolean(entry?.isDirectory);
+						return toFileHintItem({
+							uri: entryUri,
+							name: entry?.name || Url.basename(entryUri) || entryUri,
+							path: entryUri,
+							description: isDirectory
+								? "Folder in current cwd"
+								: "File in current cwd",
+							source: isDirectory ? "Current cwd folder" : "Current cwd file",
+							icon: isDirectory ? "folder" : "attach_file",
+						});
+					})
+					.filter(Boolean)
+					.sort((a, b) => {
+						const directoryRankA = a.source?.includes("folder") ? 0 : 1;
+						const directoryRankB = b.source?.includes("folder") ? 0 : 1;
+						if (directoryRankA !== directoryRankB)
+							return directoryRankA - directoryRankB;
+						return a.label.localeCompare(b.label);
+					});
+
+				currentCwdMentionCache = {
+					cwd,
+					items,
+				};
+				return items;
+			} catch {
+				currentCwdMentionCache = {
+					cwd,
+					items: [],
+				};
+				return [];
+			}
+		}
+
+		async function getMentionItems(query = "") {
+			const normalizedQuery = String(query || "")
+				.trim()
+				.toLowerCase();
+			const seen = new Set();
+			const results = [];
+			const pushItem = (item) => {
+				if (!item?.value || seen.has(item.value)) return;
+				if (
+					normalizedQuery &&
+					![item.label, item.subText, item.value, item.source]
+						.filter(Boolean)
+						.some((value) =>
+							String(value).toLowerCase().includes(normalizedQuery),
+						)
+				) {
+					return;
+				}
+				seen.add(item.value);
+				results.push(item);
+			};
+
+			const indexedWorkspaceItems = [];
+			const activeCwd = String(getActiveComposerCwd() || "").trim();
+			const resolvedCwd = activeCwd
+				? resolveAgentPath(activeCwd, client.session?.sessionId || "")
+				: "";
+			try {
+				if (resolvedCwd) {
+					const cwdTree = files(resolvedCwd);
+					if (cwdTree) {
+						const directItems = collectIndexedDirectoryItems(cwdTree);
+						const recursiveItems = collectIndexedTreeItems(cwdTree).sort(
+							(a, b) => {
+								if ((a.sortDepth || 0) !== (b.sortDepth || 0)) {
+									return (a.sortDepth || 0) - (b.sortDepth || 0);
+								}
+								const directoryRankA = a.icon === "folder" ? 0 : 1;
+								const directoryRankB = b.icon === "folder" ? 0 : 1;
+								if (directoryRankA !== directoryRankB) {
+									return directoryRankA - directoryRankB;
+								}
+								return a.label.localeCompare(b.label);
+							},
+						);
+						indexedWorkspaceItems.push(...directItems, ...recursiveItems);
+					}
+				}
+
+				if (!indexedWorkspaceItems.length) {
+					files((item) => {
+						if (!item?.url) return item;
+						if (resolvedCwd && !isUriWithinScope(item.url, resolvedCwd)) {
+							return item;
+						}
+						const hint = toFileHintItem({
+							uri: item.url,
+							name: item.name,
+							path: item.path || item.url,
+							source: "Workspace index",
+							icon: "attach_file",
+						});
+						if (hint) {
+							indexedWorkspaceItems.push(hint);
+						}
+						return item;
+					});
+				}
+			} catch {
+				// Ignore file index failures.
+			}
+
+			if (indexedWorkspaceItems.length) {
+				indexedWorkspaceItems.forEach((item) => {
+					pushItem(item);
+				});
+
+				const openFiles = Array.isArray(window.editorManager?.files)
+					? window.editorManager.files
+					: [];
+				openFiles.forEach((file) => {
+					const uri = String(file?.uri || "");
+					if (!uri) return;
+					pushItem(
+						toFileHintItem({
+							uri,
+							name: file?.filename || file?.name,
+							path: file?.location || uri,
+							source: "Open file",
+							icon: "attach_file",
+						}),
+					);
+				});
+			} else {
+				(await getCurrentCwdMentionItems()).forEach((item) => {
+					pushItem(item);
+				});
+
+				const openFiles = Array.isArray(window.editorManager?.files)
+					? window.editorManager.files
+					: [];
+				openFiles.forEach((file) => {
+					const uri = String(file?.uri || "");
+					if (!uri) return;
+					pushItem(
+						toFileHintItem({
+							uri,
+							name: file?.filename || file?.name,
+							path: file?.location || uri,
+							source: "Open file",
+							icon: "code",
+						}),
+					);
+				});
+			}
+
+			results.sort((a, b) => {
+				const sourceOrderA = a.source === "Open file" ? 0 : 1;
+				const sourceOrderB = b.source === "Open file" ? 0 : 1;
+				if (sourceOrderA !== sourceOrderB) return sourceOrderA - sourceOrderB;
+				return a.label.localeCompare(b.label);
+			});
+
+			results.unshift({
+				id: ACP_BROWSE_FILE_OPTION,
+				type: "mention_browse",
+				value: ACP_BROWSE_FILE_OPTION,
+				label: "Browse files…",
+				subText: "Pick any file from storage",
+				icon: "folder_open",
+			});
+
+			return results.slice(0, 60);
+		}
+
+		function getSlashCommandItems(query = "") {
+			const normalizedQuery = String(query || "")
+				.trim()
+				.toLowerCase();
+			const availableCommands = Array.isArray(client.session?.availableCommands)
+				? client.session.availableCommands
+				: [];
+			return availableCommands
+				.map((command) => {
+					const name = String(command?.name || "").trim();
+					if (!name) return null;
+					const description = String(command?.description || "").trim();
+					const searchable = [name, description].join(" ").toLowerCase();
+					if (normalizedQuery && !searchable.includes(normalizedQuery)) {
+						return null;
+					}
+					return {
+						id: name,
+						type: "slash",
+						value: name,
+						label: `/${name}`,
+						subText: description || "Slash command",
+						icon: "code",
+					};
+				})
+				.filter(Boolean)
+				.slice(0, 30);
+		}
+
+		function hideComposerHints() {
+			activeComposerHints = [];
+			activeComposerHintIndex = 0;
+			activeComposerTrigger = null;
+			$composerHints.innerHTML = "";
+			$composerHints.classList.add("hidden");
+		}
+
+		function renderComposerHints() {
+			$composerHints.innerHTML = "";
+			if (!activeComposerHints.length || !activeComposerTrigger) {
+				$composerHints.classList.add("hidden");
+				return;
+			}
+
+			const $header = (
+				<div className="acp-composer-hints-header">
+					{activeComposerTrigger.trigger === "@"
+						? "Add file context"
+						: "Slash commands"}
+				</div>
+			);
+			$composerHints.append($header);
+
+			activeComposerHints.forEach((item, index) => {
+				const isDisabled = item.type === "empty";
+				const $item = (
+					<button
+						className={`acp-composer-hint${index === activeComposerHintIndex ? " active" : ""}`}
+						type="button"
+						disabled={isDisabled}
+						onmousedown={(event) => {
+							if (isDisabled) return;
+							event.preventDefault();
+							void applyComposerHint(item);
+						}}
+					>
+						<span className={`icon acp-composer-hint-icon ${item.icon}`}></span>
+						<span className="acp-composer-hint-copy">
+							<span className="acp-composer-hint-topline">
+								<span className="acp-composer-hint-title">{item.label}</span>
+								{item.source
+									? <span className="acp-composer-hint-source">
+											{item.source}
+										</span>
+									: null}
+							</span>
+							<span className="acp-composer-hint-subtitle">{item.subText}</span>
+						</span>
+					</button>
+				);
+				$composerHints.append($item);
+			});
+
+			$composerHints.classList.remove("hidden");
+		}
+
+		async function refreshComposerHints() {
+			const requestId = ++composerHintsRequestId;
+			const triggerState = getComposerTriggerState();
+			if (!triggerState) {
+				hideComposerHints();
+				return;
+			}
+
+			const nextHints =
+				triggerState.trigger === "@"
+					? await getMentionItems(triggerState.query)
+					: getSlashCommandItems(triggerState.query);
+
+			if (requestId !== composerHintsRequestId) {
+				return;
+			}
+
+			activeComposerTrigger = triggerState;
+			activeComposerHints = nextHints.length
+				? nextHints
+				: [
+						{
+							id: ACP_EMPTY_HINT_OPTION,
+							type: "empty",
+							value: "",
+							label:
+								triggerState.trigger === "@"
+									? "No matching files"
+									: "No slash commands advertised",
+							subText:
+								triggerState.trigger === "@"
+									? "Try a different name or browse files"
+									: "This agent has not sent available commands yet",
+							icon: "info",
+						},
+					];
+			activeComposerHintIndex = Math.min(
+				activeComposerHintIndex,
+				activeComposerHints.length - 1,
+			);
+			renderComposerHints();
+		}
+
+		function moveComposerHintSelection(direction) {
+			if (!activeComposerHints.length) return;
+			const lastIndex = activeComposerHints.length - 1;
+			if (direction > 0) {
+				activeComposerHintIndex =
+					activeComposerHintIndex >= lastIndex
+						? 0
+						: activeComposerHintIndex + 1;
+			} else {
+				activeComposerHintIndex =
+					activeComposerHintIndex <= 0
+						? lastIndex
+						: activeComposerHintIndex - 1;
+			}
+			renderComposerHints();
+			const $activeHint = $composerHints.querySelector(
+				".acp-composer-hint.active",
+			);
+			$activeHint?.scrollIntoView?.({
+				block: "nearest",
+			});
+		}
+
+		async function resolveAttachmentForUri(uri, preferredName = "") {
+			const normalizedUri = String(uri || "");
+			if (!normalizedUri) return null;
+			let size = null;
+			let detectedMimeType = "";
+			try {
+				const stat = await fsOperation(normalizedUri).stat();
+				size = extractByteSize(stat);
+				detectedMimeType =
+					normalizeMimeType(stat?.mimeType) ||
+					normalizeMimeType(stat?.mime) ||
+					normalizeMimeType(stat?.type);
+			} catch {
+				// Keep attachment metadata best-effort only.
+			}
+			return {
+				uri: normalizedUri,
+				name:
+					sanitizeInlineAttachmentLabel(preferredName) ||
+					toAttachmentName({ url: normalizedUri }),
+				size,
+				mimeType:
+					detectedMimeType || guessMimeType(preferredName || normalizedUri),
+				iconClass: helpers.getIconForFile(
+					preferredName || Url.basename(normalizedUri) || normalizedUri,
+				),
+			};
+		}
+
+		function clearCurrentCwdMentionCache() {
+			currentCwdMentionCache = {
+				cwd: "",
+				items: [],
+			};
+		}
+
+		function insertSlashCommand(commandName = "", triggerState = null) {
+			const currentTrigger = triggerState || activeComposerTrigger;
+			if (!currentTrigger) return;
+			const nextName = String(commandName || "")
+				.trim()
+				.replace(/^\/+/, "");
+			if (!nextName) return;
+			replaceComposerTrigger(currentTrigger, `/${nextName} `);
+		}
+
+		async function applyComposerHint(item) {
+			if (!item) return;
+			const triggerState = activeComposerTrigger
+				? { ...activeComposerTrigger }
+				: null;
+			hideComposerHints();
+			if (item.type === "empty") return;
+			if (item.type === "slash") {
+				insertSlashCommand(item.value, triggerState);
+				return;
+			}
+			try {
+				let attachment;
+				if (item.type === "mention_browse") {
+					const selectedFile = await FileBrowser(
+						"file",
+						"Select file to mention",
+					);
+					if (!selectedFile?.url) return;
+					attachment = await resolveAttachmentForUri(
+						String(selectedFile.url),
+						toAttachmentName(selectedFile),
+					);
+					if (attachment) {
+						attachment.source = "Picked file";
+						attachment.icon = "attach_file";
+					}
+				} else {
+					attachment = await resolveAttachmentForUri(item.value, item.label);
+					if (attachment) {
+						attachment.source = item.source || "Context";
+						attachment.icon = item.icon || "attach_file";
+					}
+				}
+				if (!attachment) return;
+				insertInlineMentionToken(attachment, triggerState);
+			} catch (error) {
+				if (!error) return;
+				console.error("[ACP] Failed to insert inline mention:", error);
+				toast(error?.message || "Failed to add file reference");
+			}
+		}
 
 		const $emptyState = (
 			<div className="acp-empty-state">
@@ -774,23 +1621,106 @@ export default function AcpPageInclude() {
 		);
 
 		function sendSuggestion(text) {
-			$textarea.value = text;
+			$editor.textContent = text;
+			const textNode = getOrCreateEditableTextNode();
+			focusComposerAtNode(textNode, textNode.textContent.length);
 			updateSendButtonState();
+			void refreshComposerHints();
 			handleSend();
 		}
 
-		const $textarea = (
-			<textarea
-				placeholder="Message agent…"
-				rows="1"
-				enterkeyhint="newline"
-				oninput={(e) => {
-					e.target.style.height = "auto";
-					e.target.style.height = Math.min(e.target.scrollHeight, 128) + "px";
-					updateSendButtonState();
-				}}
-			></textarea>
-		);
+		const $editor = <div className="acp-editor"></div>;
+		const $composerHints = <div className="acp-composer-hints hidden"></div>;
+		$editor.setAttribute("contenteditable", "true");
+		$editor.tabIndex = 0;
+		$editor.setAttribute("role", "textbox");
+		$editor.setAttribute("aria-multiline", "true");
+		$editor.dataset.placeholder = "Message agent…";
+		$editor.spellcheck = false;
+		$editor.contentEditable = "true";
+		$editor.addEventListener("input", () => {
+			if ($editor.innerHTML === "<br>") {
+				$editor.innerHTML = "";
+				getOrCreateEditableTextNode();
+			}
+			updateSendButtonState();
+			void refreshComposerHints();
+		});
+		$editor.addEventListener("keydown", (event) => {
+			if (activeComposerHints.length && event.key === "ArrowDown") {
+				event.preventDefault();
+				moveComposerHintSelection(1);
+				return;
+			}
+			if (activeComposerHints.length && event.key === "ArrowUp") {
+				event.preventDefault();
+				moveComposerHintSelection(-1);
+				return;
+			}
+			if (
+				activeComposerHints.length &&
+				(event.key === "Enter" || event.key === "Tab")
+			) {
+				event.preventDefault();
+				void applyComposerHint(
+					activeComposerHints[activeComposerHintIndex] || null,
+				);
+				return;
+			}
+			if (event.key === "Escape") {
+				event.preventDefault();
+				hideComposerHints();
+				return;
+			}
+			if (event.key === "Backspace") {
+				const token = getAdjacentMentionToken("backward");
+				if (removeInlineMentionToken(token, "backward")) {
+					event.preventDefault();
+					return;
+				}
+			}
+			if (event.key === "Delete") {
+				const token = getAdjacentMentionToken("forward");
+				if (removeInlineMentionToken(token, "forward")) {
+					event.preventDefault();
+					return;
+				}
+			}
+			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+				event.preventDefault();
+				handleSend();
+				return;
+			}
+			if (event.key === "Enter") {
+				event.preventDefault();
+				insertComposerLineBreak();
+			}
+		});
+		$editor.addEventListener("paste", (event) => {
+			event.preventDefault();
+			const text = event.clipboardData?.getData("text/plain") || "";
+			insertComposerText(text);
+		});
+		$editor.addEventListener("click", () => {
+			if (!$editor.firstChild) {
+				const textNode = getOrCreateEditableTextNode();
+				focusComposerAtNode(textNode, textNode.textContent.length);
+			}
+			void refreshComposerHints();
+		});
+		$editor.addEventListener("keyup", () => {
+			void refreshComposerHints();
+		});
+		$editor.addEventListener("blur", () => {
+			setTimeout(() => {
+				const activeElement = document.activeElement;
+				const stillFocused =
+					activeElement === $editor || $composerHints.contains(activeElement);
+				if (!stillFocused) {
+					hideComposerHints();
+				}
+			}, 0);
+		});
 
 		const $attachBtn = (
 			<button
@@ -1212,9 +2142,12 @@ export default function AcpPageInclude() {
 
 		function updateSendButtonState() {
 			if (isPrompting) return;
-			const hasText = Boolean($textarea.value.trim());
+			const hasText = Boolean(getComposerPlainText().trim());
 			const hasAttachments = pendingAttachments.length > 0;
-			$sendBtn.disabled = !hasText && !hasAttachments;
+			const hasInlineMentions = Boolean(
+				$editor.querySelector(COMPOSER_MENTION_SELECTOR),
+			);
+			$sendBtn.disabled = !hasText && !hasAttachments && !hasInlineMentions;
 		}
 
 		function toResourceLinkBlock(attachment) {
@@ -1325,10 +2258,17 @@ export default function AcpPageInclude() {
 		}
 
 		async function buildPromptContent(text) {
-			const content = await getAttachmentContentBlocks();
-			if (text) {
-				content.push({ type: "text", text });
+			const content = [];
+			const inlineBlocks = serializeComposerBlocks();
+			for (const block of inlineBlocks) {
+				if (block.type === "text") {
+					content.push(block);
+					continue;
+				}
+				const attachment = await resolveAttachmentForUri(block.uri, block.name);
+				content.push(attachment ? toResourceLinkBlock(attachment) : block);
 			}
+			content.push(...(await getAttachmentContentBlocks()));
 			return content;
 		}
 
@@ -1379,18 +2319,24 @@ export default function AcpPageInclude() {
 		}
 
 		async function handleSend() {
-			const text = $textarea.value.trim();
+			const rawText = getComposerPlainText();
+			const text = rawText.trim();
 			const hasAttachments = pendingAttachments.length > 0;
-			if ((!text && !hasAttachments) || isPrompting) return;
+			const hasInlineMentions = Boolean(
+				$editor.querySelector(COMPOSER_MENTION_SELECTOR),
+			);
+			if ((!text && !hasAttachments && !hasInlineMentions) || isPrompting)
+				return;
 
 			// Remove empty state when first message is sent
 			if ($emptyState.parentNode) $emptyState.remove();
 
-			const content = await buildPromptContent(text);
+			const content = await buildPromptContent(rawText);
 
-			$textarea.value = "";
-			$textarea.style.height = "auto";
+			$editor.innerHTML = "";
+			getOrCreateEditableTextNode();
 			pendingAttachments = [];
+			hideComposerHints();
 			renderAttachmentPreview();
 			updateSendButtonState();
 
@@ -1431,8 +2377,9 @@ export default function AcpPageInclude() {
 				{$messages}
 				<div className="acp-input-area">
 					<div className="acp-input-container">
+						{$composerHints}
 						{$attachmentPreview}
-						{$textarea}
+						{$editor}
 						<div className="acp-input-toolbar">
 							{$attachBtn}
 							{$sessionControls}
@@ -1443,6 +2390,23 @@ export default function AcpPageInclude() {
 				</div>
 			</div>
 		);
+		$view
+			.querySelector(".acp-input-container")
+			?.addEventListener("click", (event) => {
+				if (
+					event.target instanceof HTMLElement &&
+					(event.target.closest(".acp-input-toolbar") ||
+						event.target.closest(".acp-composer-hints") ||
+						event.target.closest(".acp-attachment-preview") ||
+						event.target.closest(".acp-inline-mention-token"))
+				) {
+					return;
+				}
+				const selectionState = getComposerSelection();
+				if (selectionState) return;
+				const textNode = getOrCreateEditableTextNode();
+				focusComposerAtNode(textNode, textNode.textContent.length);
+			});
 
 		$view.ensureEmptyState = () => {
 			if ($messages.children.length > 0) return;
@@ -1453,15 +2417,19 @@ export default function AcpPageInclude() {
 
 		$view.resetComposer = () => {
 			pendingAttachments = [];
-			$textarea.value = "";
-			$textarea.style.height = "auto";
+			$editor.innerHTML = "";
+			getOrCreateEditableTextNode();
+			clearCurrentCwdMentionCache();
+			hideComposerHints();
 			renderAttachmentPreview();
 			updateSendButtonState();
 			renderSessionControls();
 		};
 
 		$view.refreshComposerControls = () => {
+			clearCurrentCwdMentionCache();
 			renderSessionControls();
+			void refreshComposerHints();
 		};
 
 		updateSendButtonState();
@@ -1526,9 +2494,52 @@ export default function AcpPageInclude() {
 		return Number.isNaN(parsed) ? 0 : parsed;
 	}
 
+	function getUserMessageSnapshots(session) {
+		if (!session?.messages?.length) return [];
+		return session.messages
+			.filter((message) => message.role === "user")
+			.map((message, index) => {
+				const hasInlineResource = Array.isArray(message.content)
+					? message.content.some((block) => {
+							return (
+								block?.type === "resource_link" || block?.type === "resource"
+							);
+						})
+					: false;
+				if (!hasInlineResource) return null;
+				return {
+					index,
+					content: JSON.parse(JSON.stringify(message.content || [])),
+				};
+			})
+			.filter(Boolean);
+	}
+
+	function hasPersistablePrompt(session) {
+		if (!session?.messages?.length) return false;
+		return session.messages.some((message) => {
+			if (message.role !== "user" || !Array.isArray(message.content))
+				return false;
+			return message.content.some((block) => {
+				if (!block || typeof block !== "object") return false;
+				if (block.type === "text") {
+					return Boolean(String(block.text || "").trim());
+				}
+				return true;
+			});
+		});
+	}
+
 	function saveCurrentSessionHistory() {
 		const session = client.session;
 		if (!session || !currentSessionUrl) return;
+		if (!hasPersistablePrompt(session)) {
+			acpHistory.remove({
+				sessionId: session.sessionId,
+				url: currentSessionUrl,
+			});
+			return;
+		}
 
 		acpHistory.save({
 			sessionId: session.sessionId,
@@ -1538,6 +2549,7 @@ export default function AcpPageInclude() {
 			title: session.title || "",
 			preview: getSessionPreview(),
 			turnStops: session.turnStops || [],
+			userMessageSnapshots: getUserMessageSnapshots(session),
 			updatedAt: session.updatedAt || new Date().toISOString(),
 		});
 	}
@@ -1550,6 +2562,19 @@ export default function AcpPageInclude() {
 			: [];
 		if (!turnStops.length) return;
 		session.setPersistedTurnStops(turnStops);
+	}
+
+	function restorePersistedUserMessages(historyEntry) {
+		const session = client.session;
+		if (!session || !Array.isArray(historyEntry?.userMessageSnapshots)) return;
+		const userMessages = session.messages.filter((message) => {
+			return message.role === "user";
+		});
+		historyEntry.userMessageSnapshots.forEach((snapshot) => {
+			const targetMessage = userMessages[snapshot?.index];
+			if (!targetMessage || !Array.isArray(snapshot?.content)) return;
+			targetMessage.content = JSON.parse(JSON.stringify(snapshot.content));
+		});
 	}
 
 	function getSessionHistoryEntries() {
@@ -1640,6 +2665,7 @@ export default function AcpPageInclude() {
 			currentSessionUrl = entry.url;
 			setChatAgentName(entry.agentName || client.agentName);
 			restorePersistedTurnStops(entry);
+			restorePersistedUserMessages(entry);
 			saveCurrentSessionHistory();
 			syncTimeline();
 			updateStatusDot("connected");
@@ -1821,6 +2847,7 @@ export default function AcpPageInclude() {
 
 	client.on("session_update", () => {
 		syncTimeline();
+		$chatView.refreshComposerControls?.();
 	});
 
 	client.on("session_controls_update", () => {

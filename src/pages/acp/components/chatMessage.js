@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 import openFile from "lib/openFile";
 import openFolder from "lib/openFolder";
 import markdownIt from "markdown-it";
+import helpers from "utils/helpers";
 import Url from "utils/Url";
 
 const markdown = markdownIt({
@@ -429,6 +430,22 @@ export default function ChatMessage({
 		$content.append(<div className="acp-message-text">{text}</div>);
 	}
 
+	function createResourceChip(block, className = "acp-resource-chip") {
+		const resource = toResourceChipData(block);
+		if (!resource) return null;
+		const iconClass = helpers.getIconForFile(
+			resource.label || Url.basename(resource.href) || resource.href,
+		);
+		return (
+			<a className={className} href={resource.href} title={resource.href}>
+				<span className={`${iconClass} acp-file-icon`}></span>
+				<span className="acp-resource-chip-meta">
+					<span className="acp-resource-chip-title">{resource.label}</span>
+				</span>
+			</a>
+		);
+	}
+
 	function appendResourceChips(resourceLinks = []) {
 		if (!resourceLinks.length) return;
 
@@ -440,22 +457,37 @@ export default function ChatMessage({
 			const key = resource.href || resource.label;
 			if (!key || seen.has(key)) return;
 			seen.add(key);
-
-			$attachmentRow.append(
-				<a
-					className="acp-resource-chip"
-					href={resource.href}
-					title={resource.href}
-				>
-					<i className="icon attach_file"></i>
-					<span className="acp-resource-chip-meta">
-						<span className="acp-resource-chip-title">{resource.label}</span>
-					</span>
-				</a>,
-			);
+			const $chip = createResourceChip(block);
+			if ($chip) $attachmentRow.append($chip);
 		});
 
-		$content.append($attachmentRow);
+		if ($attachmentRow.childElementCount) {
+			$content.append($attachmentRow);
+		}
+	}
+
+	function appendInlineUserBlocks(blocks = []) {
+		const $text = (
+			<div className="acp-message-text acp-message-rich-text"></div>
+		);
+		blocks.forEach((block) => {
+			if (block.type === "text") {
+				$text.append(document.createTextNode(block.text || ""));
+				return;
+			}
+			if (block.type === "resource_link" || block.type === "resource") {
+				const $chip = createResourceChip(block, "acp-resource-chip inline");
+				if ($chip) $text.append($chip);
+			}
+		});
+		if (
+			$text.childNodes.length === 1 &&
+			$text.firstChild?.nodeType === Node.TEXT_NODE &&
+			!String($text.textContent || "").trim()
+		) {
+			return;
+		}
+		$content.append($text);
 	}
 
 	function renderContent() {
@@ -473,17 +505,33 @@ export default function ChatMessage({
 			})
 			.filter(Boolean);
 
-		const resourceLinks = [
-			...message.content.filter((block) => {
+		if (message.role === "user") {
+			appendInlineUserBlocks(displayBlocks);
+			appendResourceChips(extractedTextResources);
+		} else {
+			const resourceLinks = [
+				...message.content.filter((block) => {
+					return block.type === "resource_link" || block.type === "resource";
+				}),
+				...extractedTextResources,
+			].filter((block) => {
 				return block.type === "resource_link" || block.type === "resource";
-			}),
-			...extractedTextResources,
-		].filter((block) => {
-			return block.type === "resource_link" || block.type === "resource";
-		});
-		appendResourceChips(resourceLinks);
+			});
+			appendResourceChips(resourceLinks);
+		}
 
 		displayBlocks.forEach((block) => {
+			if (message.role === "user") {
+				if (block.type === "image" && block.data) {
+					$content.append(
+						<img
+							className="acp-inline-image"
+							src={`data:${block.mimeType};base64,${block.data}`}
+						/>,
+					);
+				}
+				return;
+			}
 			if (block.type === "text") {
 				appendTextBlock(block.text);
 			} else if (block.type === "resource_link" || block.type === "resource") {

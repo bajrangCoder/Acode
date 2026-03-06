@@ -13,6 +13,11 @@ export interface ACPHistoryTurnStop {
 	timestamp: number;
 }
 
+export interface ACPHistoryUserMessageSnapshot {
+	index: number;
+	content: Record<string, unknown>[];
+}
+
 export interface ACPHistoryEntry {
 	sessionId: string;
 	url: string;
@@ -21,6 +26,7 @@ export interface ACPHistoryEntry {
 	title: string;
 	preview: string;
 	turnStops: ACPHistoryTurnStop[];
+	userMessageSnapshots: ACPHistoryUserMessageSnapshot[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -58,7 +64,23 @@ function normalizeEntry(entry: Partial<ACPHistoryEntry> = {}): ACPHistoryEntry {
 				})
 				.filter((item): item is ACPHistoryTurnStop => Boolean(item))
 		: [];
-
+	const userMessageSnapshots = Array.isArray(entry.userMessageSnapshots)
+		? entry.userMessageSnapshots
+				.map((item) => {
+					const index = Number.isInteger(item?.index) ? Number(item.index) : -1;
+					const content = Array.isArray(item?.content)
+						? item.content.filter((block) => {
+								return block && typeof block === "object";
+							})
+						: [];
+					if (index < 0 || !content.length) return null;
+					return {
+						index,
+						content,
+					};
+				})
+				.filter((item): item is ACPHistoryUserMessageSnapshot => Boolean(item))
+		: [];
 	return {
 		sessionId:
 			typeof entry.sessionId === "string" ? entry.sessionId.trim() : "",
@@ -69,6 +91,7 @@ function normalizeEntry(entry: Partial<ACPHistoryEntry> = {}): ACPHistoryEntry {
 		title: typeof entry.title === "string" ? entry.title.trim() : "",
 		preview: typeof entry.preview === "string" ? entry.preview.trim() : "",
 		turnStops,
+		userMessageSnapshots,
 		createdAt,
 		updatedAt,
 	};
@@ -136,6 +159,10 @@ const acpHistory = {
 					normalized.turnStops.length > 0
 						? normalized.turnStops
 						: current.turnStops,
+				userMessageSnapshots:
+					normalized.userMessageSnapshots.length > 0
+						? normalized.userMessageSnapshots
+						: current.userMessageSnapshots,
 				createdAt: current.createdAt,
 				updatedAt: normalized.updatedAt || new Date().toISOString(),
 			};
