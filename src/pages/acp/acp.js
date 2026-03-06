@@ -74,7 +74,15 @@ export default function AcpPageInclude() {
 			setFormStatus("Connecting...");
 			await ensureReadyForUrl(url);
 			setFormStatus("Starting session...");
-			await client.newSession(nextCwd || undefined);
+
+			try {
+				await client.newSession(nextCwd || undefined);
+			} catch (sessionErr) {
+				if (!ACPClient.isAuthRequiredError(sessionErr)) throw sessionErr;
+				await handleAuthentication();
+				await client.newSession(nextCwd || undefined);
+			}
+
 			currentSessionUrl = url;
 			switchToChat(client.agentName);
 			saveCurrentSessionHistory();
@@ -85,6 +93,120 @@ export default function AcpPageInclude() {
 		}
 	}
 
+	async function handleAuthentication() {
+		const methods = client.authMethods;
+		if (!methods.length) {
+			throw new Error(
+				"Agent requires authentication but did not advertise any auth methods.",
+			);
+		}
+
+		let selectedMethod = methods[0];
+
+		if (methods.length > 1) {
+			setFormStatus("Authentication required — choose a method");
+			const picked = await select(
+				"Authentication Required",
+				methods.map((m) => ({
+					value: m.id,
+					text: m.name + (m.description ? ` — ${m.description}` : ""),
+					icon: "vpn_key",
+				})),
+				{ textTransform: false },
+			);
+			if (!picked) throw new Error("Authentication cancelled");
+			selectedMethod = methods.find((m) => m.id === picked) || methods[0];
+		}
+
+		let browserOpened = false;
+		const maybeOpenAuthUrl = (value) => {
+			const url = extractExternalUrl(value);
+			if (!url || browserOpened) return false;
+			browserOpened = true;
+			system.openInBrowser(url);
+			setFormStatus("Complete sign-in in your browser…");
+			return true;
+		};
+
+		const handleExtNotification = (event) => {
+			maybeOpenAuthUrl(event);
+		};
+		const handleExtRequest = (event) => {
+			maybeOpenAuthUrl(event);
+		};
+		const handleAuthExtRequest = async (method, params = {}) => {
+			const didOpen = maybeOpenAuthUrl({ method, params });
+			if (!didOpen) {
+				throw RequestError.methodNotFound(method);
+			}
+			return {
+				ok: true,
+				handled: true,
+				opened: true,
+			};
+		};
+
+		const { alpineRoot } = getTerminalPaths();
+		const urlTempPath = `file://${alpineRoot}/tmp/.acode_open_url`;
+		try {
+			await fsOperation(urlTempPath).delete();
+		} catch {
+			/* ignore */
+		}
+
+		setFormStatus(`Authenticating via ${selectedMethod.name}…`);
+
+		client.setExtensionRequestHandler(handleAuthExtRequest);
+		client.on("ext_request", handleExtRequest);
+		client.on("ext_notification", handleExtNotification);
+		const stopPolling = startAuthUrlPolling(urlTempPath);
+		try {
+			const response = await client.authenticate(selectedMethod.id);
+			maybeOpenAuthUrl(response);
+		} finally {
+			stopPolling();
+			client.setExtensionRequestHandler(null);
+			client.off("ext_request", handleExtRequest);
+			client.off("ext_notification", handleExtNotification);
+		}
+
+		setFormStatus("Authenticated — starting session…");
+	}
+
+	function startAuthUrlPolling(urlFilePath) {
+		let stopped = false;
+		let opened = false;
+
+		const poll = async () => {
+			while (!stopped) {
+				await new Promise((resolve) => setTimeout(resolve, 400));
+				if (stopped) break;
+				try {
+					const raw = await fsOperation(urlFilePath).readFile("utf8");
+					const url = String(raw || "").trim();
+					if (url && !opened) {
+						opened = true;
+						system.openInBrowser(url);
+						setFormStatus("Complete sign-in in your browser…");
+						try {
+							await fsOperation(urlFilePath).delete();
+						} catch {
+							/* ignore */
+						}
+					}
+				} catch {
+					/* file doesn't exist yet */
+				}
+			}
+		};
+
+		void poll();
+
+		return () => {
+			stopped = true;
+		};
+	}
+
 	function getTerminalPaths() {
 		const packageName = window.BuildInfo?.packageName || "com.foxdebug.acode";
 		const dataDir = `/data/user/0/${packageName}`;
@@ -93,6 +215,58 @@ export default function AcpPageInclude() {
 			alpineRoot: `${dataDir}/files/alpine`,
 			publicDir: `${dataDir}/files/public`,
 		};
+	}
+
+	function extractExternalUrl(value, visited = new Set()) {
+		if (typeof value === "string") {
+			const trimmed = value.trim();
+			return /^(https?|ftps?|mailto|tel|sms|geo):/i.test(trimmed)
+				? trimmed
+				: "";
+		}
+
+		if (!value || typeof value !== "object") return "";
+		if (visited.has(value)) return "";
+		visited.add(value);
+
+		if (Array.isArray(value)) {
+			for (const entry of value) {
+				const nestedUrl = extractExternalUrl(entry, visited);
+				if (nestedUrl) return nestedUrl;
+			}
+			return "";
+		}
+
+		const prioritizedKeys = [
+			"url",
+			"uri",
+			"href",
+			"openUrl",
+			"open_url",
+			"browserUrl",
+			"browser_url",
+			"verificationUri",
+			"verification_uri",
+			"verificationUrl",
+			"verification_url",
+			"authorizationUrl",
+			"authorization_url",
+			"authorizeUrl",
+			"authorize_url",
+		];
+
+		for (const key of prioritizedKeys) {
+			if (!(key in value)) continue;
+			const nestedUrl = extractExternalUrl(value[key], visited);
+			if (nestedUrl) return nestedUrl;
+		}
+
+		for (const nestedValue of Object.values(value)) {
+			const nestedUrl = extractExternalUrl(nestedValue, visited);
+			if (nestedUrl) return nestedUrl;
+		}
+
+		return "";
 	}
 
 	function normalizePathInput(value = "") {
@@ -1455,7 +1629,13 @@ export default function AcpPageInclude() {
 			switchToChat(entry.agentName || client.agentName);
 			updateStatusDot("connecting");
 
-			await client.loadSession(entry.sessionId, cwd);
+			try {
+				await client.loadSession(entry.sessionId, cwd);
+			} catch (loadErr) {
+				if (!ACPClient.isAuthRequiredError(loadErr)) throw loadErr;
+				await handleAuthentication();
+				await client.loadSession(entry.sessionId, cwd);
+			}
 			client.session?.finishAgentTurn();
 			currentSessionUrl = entry.url;
 			setChatAgentName(entry.agentName || client.agentName);

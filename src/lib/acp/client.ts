@@ -1,6 +1,8 @@
 import {
 	type Client as ACPProtocolClient,
 	type AgentCapabilities,
+	type AuthenticateResponse,
+	type AuthMethod,
 	type ClientCapabilities,
 	ClientSideConnection,
 	type ContentBlock,
@@ -46,18 +48,27 @@ const ACP_METHODS = {
 	TERMINAL_KILL: "terminal/kill",
 } as const;
 
+const AUTH_REQUIRED_CODE = -32000;
+
 type ClientEventType =
 	| "state_change"
 	| "session_update"
 	| "session_controls_update"
 	| "error"
-	| "permission_request";
+	| "permission_request"
+	| "ext_notification"
+	| "ext_request";
 
 type ClientEventHandler = (data: unknown) => void;
 
 type PendingPermissionRequest = {
 	resolve: (response: PermissionResponse) => void;
 };
+
+type ExtensionRequestHandler = (
+	method: string,
+	params: Record<string, unknown>,
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
 export interface StartSessionOptions {
 	url: string;
@@ -80,10 +91,12 @@ export class ACPClient {
 		PendingPermissionRequest
 	>();
 	private nextPermissionRequestId = 1;
+	private extensionRequestHandler: ExtensionRequestHandler | null = null;
 
 	private _state: ConnectionState = ConnectionState.DISCONNECTED;
 	private _agentCapabilities: AgentCapabilities | null = null;
 	private _agentInfo: Implementation | null = null;
+	private _authMethods: AuthMethod[] = [];
 	private _session: ACPSession | null = null;
 	private _sessionModes: SessionModeState | null = null;
 	private _sessionModels: SessionModelState | null = null;
@@ -99,6 +112,10 @@ export class ACPClient {
 
 	get agentInfo(): Implementation | null {
 		return this._agentInfo;
+	}
+
+	get authMethods(): AuthMethod[] {
+		return this._authMethods;
 	}
 
 	get session(): ACPSession | null {
@@ -156,6 +173,10 @@ export class ACPClient {
 		handler: (params: any) => Promise<unknown> | unknown,
 	): void {
 		this.requestHandlers.set(method, handler);
+	}
+
+	setExtensionRequestHandler(handler: ExtensionRequestHandler | null): void {
+		this.extensionRequestHandler = handler;
 	}
 
 	async connect(config: TransportConfig): Promise<void> {
@@ -225,6 +246,9 @@ export class ACPClient {
 
 			this._agentCapabilities = result.agentCapabilities ?? null;
 			this._agentInfo = result.agentInfo ?? null;
+			this._authMethods = Array.isArray(result.authMethods)
+				? result.authMethods
+				: [];
 			this.setState(ConnectionState.READY);
 			return result;
 		} catch (error) {
@@ -411,6 +435,30 @@ export class ACPClient {
 		this.updateSessionConfigOptionValue(configId, value);
 	}
 
+	async authenticate(methodId: string): Promise<AuthenticateResponse> {
+		this.ensureReady();
+		const connection = this.getConnection();
+		const result = await this.runWhileConnected(
+			connection.authenticate({ methodId }),
+		);
+		return result as AuthenticateResponse;
+	}
+
+	static isAuthRequiredError(error: unknown): boolean {
+		if (error instanceof RequestError && error.code === AUTH_REQUIRED_CODE) {
+			return true;
+		}
+		const asAny = error as { code?: number; message?: string };
+		if (asAny?.code === AUTH_REQUIRED_CODE) return true;
+		if (
+			typeof asAny?.message === "string" &&
+			/auth.?required/i.test(asAny.message)
+		) {
+			return true;
+		}
+		return false;
+	}
+
 	cancel(): void {
 		if (!this._session || !this.connection) return;
 
@@ -472,8 +520,22 @@ export class ACPClient {
 				this.callRegisteredRequest(ACP_METHODS.TERMINAL_WAIT_FOR_EXIT, params),
 			killTerminal: async (params) =>
 				this.callRegisteredRequest(ACP_METHODS.TERMINAL_KILL, params),
-			extMethod: async (method, params) =>
-				this.callRegisteredRequest(method, params),
+			extMethod: async (method, params) => {
+				if (this.requestHandlers.has(method)) {
+					return await this.callRegisteredRequest(method, params);
+				}
+				this.emit("ext_request", { method, params });
+				if (this.extensionRequestHandler) {
+					return await this.extensionRequestHandler(
+						method,
+						(params as Record<string, unknown>) || {},
+					);
+				}
+				throw RequestError.methodNotFound(method);
+			},
+			extNotification: async (method, params) => {
+				this.emit("ext_notification", { method, params });
+			},
 		};
 	}
 
@@ -721,6 +783,7 @@ export class ACPClient {
 		this._session = null;
 		this._agentCapabilities = null;
 		this._agentInfo = null;
+		this._authMethods = [];
 		this.clearSessionConfigurationState();
 	}
 
