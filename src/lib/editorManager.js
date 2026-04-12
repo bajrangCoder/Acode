@@ -2365,7 +2365,8 @@ async function EditorManager($header, $body) {
 			};
 
 			const files = sidebarApps.get("files");
-			files.insertBefore($openFileList, files.firstElementChild);
+			const listArea = files.$listArea || files;
+			listArea.insertBefore($openFileList, listArea.firstElementChild);
 			root.classList.remove("top-bar");
 		}
 

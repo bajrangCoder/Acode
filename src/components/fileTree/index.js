@@ -8,6 +8,14 @@ import Path from "utils/Path";
 const VIRTUALIZATION_THRESHOLD = Number.POSITIVE_INFINITY; // FIX: temporary due to some scrolling issues in VirtualList
 const ITEM_HEIGHT = 30;
 
+function normalizeQuery(query = "") {
+	return String(query).trim().toLowerCase();
+}
+
+function needsEntryMetadata(sortMode = "name-asc") {
+	return /^modified-|^size-/.test(sortMode);
+}
+
 /**
  * @typedef {object} FileTreeOptions
  * @property {function(string): Promise<Array>} getEntries - Function to get directory entries
@@ -15,6 +23,7 @@ const ITEM_HEIGHT = 30;
  * @property {function(string, string, string, HTMLElement): void} [onContextMenu] - Context menu handler
  * @property {Object<string, boolean>} [expandedState] - Map of expanded folder URLs
  * @property {function(string, boolean): void} [onExpandedChange] - Called when folder expanded state changes
+ * @property {function(string): Promise<object>} [getEntryStats] - Optional metadata loader used for sorting
  */
 
 /**
@@ -35,6 +44,12 @@ export default class FileTree {
 		this.isLoading = false;
 		this.childTrees = new Map(); // Track child trees for cleanup
 		this.depth = options._depth || 0; // Internal: nesting depth
+		this.viewState = {
+			searchQuery: normalizeQuery(options.searchQuery),
+			showHiddenFiles: options.showHiddenFiles ?? true,
+			sortMode: options.sortMode || "name-asc",
+		};
+		this.visibleEntryCount = 0;
 	}
 
 	/**
@@ -50,9 +65,11 @@ export default class FileTree {
 			this.clear();
 
 			const entries = await this.options.getEntries(url);
+			await this.hydrateEntryMetadata(entries);
 			this.entries = helpers.sortDir(entries, {
 				sortByName: true,
-				showHiddenFiles: true,
+				showHiddenFiles: this.viewState.showHiddenFiles,
+				sortMode: this.viewState.sortMode,
 			});
 
 			if (this.entries.length > VIRTUALIZATION_THRESHOLD) {
@@ -60,6 +77,8 @@ export default class FileTree {
 			} else {
 				this.renderWithFragment();
 			}
+
+			this.applySearchFilter();
 		} finally {
 			this.isLoading = false;
 		}
@@ -192,6 +211,9 @@ export default class FileTree {
 				childTree = new FileTree($content, {
 					...this.options,
 					_depth: this.depth + 1,
+					searchQuery: this.viewState.searchQuery,
+					showHiddenFiles: this.viewState.showHiddenFiles,
+					sortMode: this.viewState.sortMode,
 				});
 				this.childTrees.set(url, childTree);
 				$content._fileTree = childTree;
@@ -307,6 +329,7 @@ export default class FileTree {
 		this.container.innerHTML = "";
 		this.container.classList.remove("virtual-scroll");
 		this.entries = [];
+		this.visibleEntryCount = 0;
 	}
 
 	/**
@@ -335,6 +358,110 @@ export default class FileTree {
 		}
 	}
 
+	async hydrateEntryMetadata(entries = []) {
+		if (
+			!needsEntryMetadata(this.viewState.sortMode) ||
+			typeof this.options.getEntryStats !== "function" ||
+			!entries.length
+		) {
+			return;
+		}
+
+		await Promise.allSettled(
+			entries.map(async (entry) => {
+				if (entry.modifiedDate !== undefined && entry.size !== undefined) {
+					return;
+				}
+
+				try {
+					const stats = await this.options.getEntryStats(entry.url);
+					if (!stats) return;
+					if (stats.modifiedDate !== undefined) {
+						entry.modifiedDate = stats.modifiedDate;
+					}
+					if (stats.size !== undefined) {
+						entry.size = stats.size;
+					}
+				} catch (error) {
+					console.warn(
+						"Failed to hydrate file tree metadata",
+						entry.url,
+						error,
+					);
+				}
+			}),
+		);
+	}
+
+	/**
+	 * Update the current search query without reloading entries.
+	 * @param {string} query
+	 */
+	setSearchQuery(query) {
+		const nextQuery = normalizeQuery(query);
+		if (this.viewState.searchQuery === nextQuery) return;
+
+		this.viewState.searchQuery = nextQuery;
+		for (const childTree of this.childTrees.values()) {
+			childTree.setSearchQuery(nextQuery);
+		}
+		this.applySearchFilter();
+	}
+
+	/**
+	 * Update sort and hidden-file settings used on the next refresh.
+	 * @param {{sortMode?: string, showHiddenFiles?: boolean}} state
+	 */
+	updateDisplayOptions(state = {}) {
+		if (state.sortMode) {
+			this.viewState.sortMode = state.sortMode;
+		}
+
+		if (typeof state.showHiddenFiles === "boolean") {
+			this.viewState.showHiddenFiles = state.showHiddenFiles;
+		}
+	}
+
+	/**
+	 * Whether the current tree has any visible entries after filtering.
+	 * @returns {boolean}
+	 */
+	hasVisibleEntries() {
+		return this.visibleEntryCount > 0;
+	}
+
+	applySearchFilter() {
+		const query = this.viewState.searchQuery;
+		if (!this.entries.length) {
+			this.visibleEntryCount = 0;
+			return;
+		}
+
+		let visibleEntryCount = 0;
+
+		for (const entry of this.entries) {
+			const $el = this.findElement(entry.url);
+			if (!$el) continue;
+
+			const $node = entry.isDirectory ? $el.closest(".list.collapsible") : $el;
+			if (!$node) continue;
+
+			let isVisible = true;
+			if (query) {
+				const ownMatch = entry.name.toLowerCase().includes(query);
+				const childTree = entry.isDirectory
+					? this.childTrees.get(entry.url)
+					: null;
+				isVisible = ownMatch || !!childTree?.hasVisibleEntries();
+			}
+
+			$node.hidden = !isVisible;
+			if (isVisible) visibleEntryCount += 1;
+		}
+
+		this.visibleEntryCount = query ? visibleEntryCount : this.entries.length;
+	}
+
 	/**
 	 * Destroy all expanded child trees and clear their references.
 	 */
@@ -352,6 +479,11 @@ export default class FileTree {
 	 * @param {boolean} isDirectory
 	 */
 	appendEntry(name, url, isDirectory) {
+		if (needsEntryMetadata(this.viewState.sortMode)) {
+			void this.refresh();
+			return;
+		}
+
 		const entry = { name, url, isDirectory, isFile: !isDirectory };
 
 		// Insert in sorted position
@@ -370,7 +502,8 @@ export default class FileTree {
 		// Re-sort entries
 		this.entries = helpers.sortDir(this.entries, {
 			sortByName: true,
-			showHiddenFiles: true,
+			showHiddenFiles: this.viewState.showHiddenFiles,
+			sortMode: this.viewState.sortMode,
 		});
 
 		// Update rendering based on mode
@@ -383,6 +516,8 @@ export default class FileTree {
 			this.container.innerHTML = "";
 			this.renderWithFragment();
 		}
+
+		this.applySearchFilter();
 	}
 
 	/**
@@ -419,5 +554,7 @@ export default class FileTree {
 				}
 			}
 		}
+
+		this.applySearchFilter();
 	}
 }

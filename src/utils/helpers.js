@@ -100,6 +100,7 @@ export default {
 		const dir = [];
 		const file = [];
 		const sortByName = fileBrowser.sortByName;
+		const sortMode = fileBrowser.sortMode || "name-asc";
 		const showHiddenFile = fileBrowser.showHiddenFiles;
 
 		list.forEach((item) => {
@@ -138,7 +139,39 @@ export default {
 		return dir.concat(file);
 
 		function compare(a, b) {
-			return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+			const aName = a.name.toLowerCase();
+			const bName = b.name.toLowerCase();
+			const nameCompare = aName === bName ? 0 : aName < bName ? -1 : 1;
+
+			switch (sortMode) {
+				case "name-desc":
+					return nameCompare * -1;
+
+				case "modified-desc":
+				case "modified-asc": {
+					const aModified = Number(new Date(a.modifiedDate || 0)) || 0;
+					const bModified = Number(new Date(b.modifiedDate || 0)) || 0;
+					if (aModified !== bModified) {
+						return sortMode === "modified-desc"
+							? bModified - aModified
+							: aModified - bModified;
+					}
+					return nameCompare;
+				}
+
+				case "size-desc":
+				case "size-asc": {
+					const aSize = Number(a.size || 0) || 0;
+					const bSize = Number(b.size || 0) || 0;
+					if (aSize !== bSize) {
+						return sortMode === "size-desc" ? bSize - aSize : aSize - bSize;
+					}
+					return nameCompare;
+				}
+
+				default:
+					return nameCompare;
+			}
 		}
 	},
 	/**

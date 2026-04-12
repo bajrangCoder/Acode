@@ -9,6 +9,7 @@ import restoreTheme from "lib/restoreTheme";
  * @property {boolean} [hideOnSelect]
  * @property {boolean} [textTransform]
  * @property {string} [default]
+ * @property {boolean} [rejectOnCancel]
  * @property {function():void} [onCancel]
  * @property {function():void} [onHide]
  */
@@ -37,6 +38,8 @@ function select(title, items, options = {}) {
 	if (typeof options === "boolean") {
 		rejectOnCancel = options;
 		options = {};
+	} else {
+		rejectOnCancel = !!options.rejectOnCancel;
 	}
 
 	return new Promise((res, rej) => {

@@ -176,6 +176,8 @@ class Settings {
 			showRetryToast: false,
 			showSideButtons: true,
 			showSponsorSidebarApp: true,
+			showSidebarFileTreeControls: true,
+			sidebarFileTreeSortMode: "name-asc",
 			showAnnotations: false,
 			lintGutter: true,
 			indentGuides: true,

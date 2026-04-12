@@ -1,99 +1,372 @@
 .container.files {
-  &:empty {
-    height: 100%;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden !important;
+	max-width: 100%;
+	min-height: 0;
 
-    &::after {
-      content: attr(data-msg);
-      font-weight: 600;
-    }
-  }
+	.files-toolbar {
+		padding: 8px 10px;
+		border-bottom: 1px solid color-mix(in srgb, var(--primary-text-color) 10%, transparent);
+		background:
+			linear-gradient(
+				180deg,
+				color-mix(in srgb, var(--secondary-color) 10%, transparent),
+				transparent 72%
+			),
+			color-mix(in srgb, var(--primary-color) 90%, rgba(0, 0, 0, 0.08));
+		backdrop-filter: blur(10px);
 
-  /* Make the container horizontally scrollable */
-  overflow-x: auto !important;
-  max-width: 100%;
+		&[hidden] {
+			display: none;
+		}
 
-  &::-webkit-scrollbar {
-    height: 5px;
-    width: 5px;
-  }
+		&.is-busy {
+			opacity: 0.72;
+		}
+	}
 
-  &::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.3);
-    border-radius: 3px;
-  }
+	.files-toolbar-shell {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
 
-  &::-webkit-scrollbar-corner {
-    background: transparent;
-  }
+	.files-toolbar-title-wrap {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 1;
+		min-width: 0;
 
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+		> .icon {
+			flex-shrink: 0;
+			font-size: 1.15rem;
+			color: color-mix(in srgb, var(--primary-text-color) 64%, transparent);
+		}
+	}
 
-  .list {
-    min-width: 100%;
-    width: max-content;
-    max-width: none;
-  }
+	.files-toolbar-title {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.98rem;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		color: color-mix(in srgb, var(--primary-text-color) 96%, transparent);
+	}
 
-  ul {
-    min-width: 100%;
-    width: max-content;
-    overflow-x: visible !important;
-    max-width: none;
-    margin-left: 0;
-    &::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-  }
+	.files-toolbar-actions {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
 
-  li {
-    min-width: 100%;
-    width: max-content;
-  }
+	.files-toolbar-action {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 34px;
+		height: 34px;
+		padding: 0;
+		border-radius: 10px;
+		background: transparent;
+		border: 0;
+		color: color-mix(in srgb, var(--primary-text-color) 78%, transparent);
+		opacity: 0.62;
+		cursor: pointer;
+		transition:
+			background-color 120ms ease,
+			color 120ms ease,
+			opacity 120ms ease,
+			box-shadow 120ms ease;
 
-  .tile {
-    > .text {
-      white-space: nowrap !important;
-      overflow: visible !important;
-      width: max-content !important;
-      text-overflow: clip !important;
-    }
-  }
+		.icon {
+			font-size: 1.08rem;
+		}
 
-  /* Add indent guides for folders (excluding first level) */
-  .list.collapsible > ul > .collapsible > ul {
-    position: relative;
-    padding-left: 24px;
+		&:hover,
+		&:focus-visible {
+			background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
+			color: var(--primary-text-color);
+			opacity: 0.94;
+			outline: none;
+		}
 
-    &::before {
-      content: "";
-      position: absolute;
-      left: 14px;
-      top: 0;
-      height: 100%;
-      width: 1px;
-      background: var(--border-color);
-      z-index: 0;
-    }
+		&.is-active {
+			background: color-mix(in srgb, var(--primary-text-color) 9%, transparent);
+			color: var(--primary-text-color);
+			opacity: 1;
+			box-shadow: inset 0 0 0 1px
+				color-mix(in srgb, var(--primary-text-color) 8%, transparent);
+		}
 
-    /* Add guides for deeper nesting */
-    .collapsible > ul {
-      padding-left: 24px;
+		&[hidden] {
+			display: none;
+		}
 
-      &::before {
-        content: "";
-        position: absolute;
-        left: 14px;
-        top: 0;
-        height: 100%;
-        width: 1px;
-        background: var(--border-color);
-        z-index: 0;
-      }
-    }
-  }
+		&:disabled {
+			opacity: 0.28;
+			cursor: default;
+			transform: none;
+		}
+	}
+
+	.files-toolbar-panel {
+		display: flex;
+		align-items: center;
+		max-height: 0;
+		opacity: 0;
+		overflow: hidden;
+		pointer-events: none;
+		transition:
+			max-height 180ms ease,
+			opacity 180ms ease,
+			transform 180ms ease,
+			margin-top 180ms ease;
+		transform: translateY(-4px);
+	}
+
+	.files-toolbar.has-search {
+		.files-toolbar-panel {
+			max-height: 52px;
+			opacity: 1;
+			margin-top: 6px;
+			pointer-events: auto;
+			transform: translateY(0);
+		}
+	}
+
+	.files-toolbar-search {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		min-width: 0;
+		height: 36px;
+		padding: 0 12px;
+		border: 1px solid
+			color-mix(in srgb, var(--border-color) 70%, transparent);
+		border-radius: 8px;
+		background: transparent;
+		transition:
+			border-color 140ms ease,
+			background-color 140ms ease,
+			box-shadow 140ms ease;
+
+		&:focus-within {
+			border-color: var(--border-color);
+			background: color-mix(in srgb, var(--secondary-color) 10%, transparent);
+			box-shadow: 0 0 0 2px color-mix(in srgb, var(--box-shadow-color) 24%, transparent);
+		}
+
+		> .icon {
+			flex-shrink: 0;
+			font-size: 0.98rem;
+			color: color-mix(in srgb, var(--primary-text-color) 52%, transparent);
+		}
+
+		input {
+			flex: 1;
+			min-width: 0;
+			width: auto !important;
+			height: 100% !important;
+			margin: 0 !important;
+			padding: 0 !important;
+			border: 0 !important;
+			border-radius: 0 !important;
+			background: transparent !important;
+			color: inherit;
+			font: inherit;
+			text-indent: 0 !important;
+			box-shadow: none !important;
+
+			&:focus {
+				background: transparent !important;
+				box-shadow: none !important;
+				border: 0 !important;
+			}
+
+			&::placeholder {
+				color: color-mix(in srgb, var(--primary-text-color) 35%, transparent);
+			}
+		}
+	}
+
+	.files-toolbar-clear {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border: 0;
+		border-radius: 8px;
+		background: transparent;
+		color: color-mix(in srgb, var(--primary-text-color) 64%, transparent);
+		cursor: pointer;
+		transition:
+			background-color 120ms ease,
+			color 120ms ease;
+
+		&:hover,
+		&:focus-visible {
+			background: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
+			color: var(--primary-text-color);
+			outline: none;
+		}
+
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	.files-list-area {
+		flex: 1;
+		min-height: 0;
+		overflow: hidden !important;
+		max-width: 100%;
+
+		&:empty {
+			height: 100%;
+			width: 100%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 18px;
+			text-align: center;
+
+			&::after {
+				content: attr(data-msg);
+				font-weight: 700;
+				opacity: 0.82;
+			}
+		}
+
+		&::-webkit-scrollbar {
+			height: 5px;
+			width: 5px;
+		}
+
+		&::-webkit-scrollbar-thumb {
+			background-color: rgba(0, 0, 0, 0.3);
+			border-radius: 3px;
+		}
+
+		&::-webkit-scrollbar-corner {
+			background: transparent;
+		}
+
+		scrollbar-width: thin;
+		scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+
+		> .list {
+			width: 100%;
+			max-width: 100%;
+			max-height: 100%;
+			min-height: 36px;
+			display: flex;
+			flex-direction: column;
+
+			&.hidden {
+				max-height: 36px !important;
+				min-height: 36px !important;
+				overflow: hidden !important;
+			}
+
+			> ul {
+				flex: 1;
+				min-height: 0;
+				width: 100%;
+				min-width: 100%;
+				max-width: 100%;
+				height: auto;
+				max-height: none;
+				overflow: auto !important;
+				overscroll-behavior: contain;
+				-webkit-overflow-scrolling: touch;
+				touch-action: pan-x pan-y;
+			}
+		}
+	}
+
+	.list {
+		min-width: 100%;
+		width: max-content;
+		max-width: none;
+	}
+
+	ul {
+		min-width: 100%;
+		width: max-content;
+		max-width: none;
+		margin-left: 0;
+
+		&::-webkit-scrollbar-corner {
+			background: transparent;
+		}
+	}
+
+	li {
+		min-width: 100%;
+		width: 100%;
+	}
+
+	.tile {
+		min-width: 100%;
+		width: 100%;
+
+		> .icon,
+		> .file {
+			flex-shrink: 0;
+		}
+
+		> .text {
+			flex: 1 0 auto !important;
+			min-width: max-content !important;
+			white-space: nowrap !important;
+			overflow: visible !important;
+			width: auto !important;
+			text-overflow: clip !important;
+		}
+
+		> .tail {
+			margin-left: auto;
+			flex: 0 0 auto;
+		}
+	}
+
+	.list.collapsible > ul > .collapsible > ul {
+		position: relative;
+		padding-left: 24px;
+
+		&::before {
+			content: "";
+			position: absolute;
+			left: 14px;
+			top: 0;
+			height: 100%;
+			width: 1px;
+			background: var(--border-color);
+			z-index: 0;
+		}
+
+		.collapsible > ul {
+			padding-left: 24px;
+
+			&::before {
+				content: "";
+				position: absolute;
+				left: 14px;
+				top: 0;
+				height: 100%;
+				width: 1px;
+				background: var(--border-color);
+				z-index: 0;
+			}
+		}
+	}
 }

@@ -1,5 +1,6 @@
 import fsOperation from "fileSystem";
 import sidebarApps from "sidebarApps";
+import { getSidebarFilesState } from "sidebarApps/files/state";
 import collapsableList from "components/collapsableList";
 import FileTree from "components/fileTree";
 import Sidebar from "components/sidebar";
@@ -161,7 +162,8 @@ function openFolder(_path, opts = {}) {
 			handleItems;
 
 	recents.addFolder(_path, opts);
-	sidebarApps.get("files").append($root);
+	const filesApp = sidebarApps.get("files");
+	(filesApp.$listArea || filesApp).append($root);
 
 	const event = {
 		url: _path,
@@ -252,13 +254,21 @@ async function expandList($list) {
 	$ul.innerHTML = "";
 
 	if (saveState) listState[url] = $list.unclasped;
-	if (!$list.unclasped) return;
+	if (!$list.unclasped) {
+		editorManager.emit("sidebar-files-tree-update", {
+			url,
+			expanded: false,
+		});
+		return;
+	}
 
 	try {
 		startLoading();
+		const sidebarFilesState = getSidebarFilesState();
 
 		const fileTree = new FileTree($ul, {
 			getEntries: (dirUrl) => fsOperation(dirUrl).lsDir(),
+			getEntryStats: (entryUrl) => fsOperation(entryUrl).stat(),
 			expandedState: listState,
 			onExpandedChange: (folderUrl, isExpanded) => {
 				if (saveState) listState[folderUrl] = isExpanded;
@@ -269,10 +279,17 @@ async function expandList($list) {
 			onContextMenu: (type, itemUrl, name, $target) => {
 				handleContextmenu(type, itemUrl, name, $target);
 			},
+			searchQuery: sidebarFilesState.searchQuery,
+			showHiddenFiles: sidebarFilesState.showHiddenFiles,
+			sortMode: sidebarFilesState.sortMode,
 		});
 
 		await fileTree.load(url);
 		$ul._fileTree = fileTree;
+		editorManager.emit("sidebar-files-tree-update", {
+			url,
+			expanded: true,
+		});
 	} catch (err) {
 		$list.collapse();
 		if (err?.includes?.("Invalid message length")) {

@@ -108,6 +108,15 @@ export default function otherSettings() {
 			category: categories.interface,
 		},
 		{
+			key: "showSidebarFileTreeControls",
+			text: strings["sidebar file toolbar"] || "Sidebar file toolbar",
+			checkbox: values.showSidebarFileTreeControls,
+			info:
+				strings["settings-info-app-sidebar-file-toolbar"] ||
+				"Show the search, sort, and reload controls above the sidebar file tree.",
+			category: categories.interface,
+		},
+		{
 			key: "openFileListPos",
 			text: strings["active files"],
 			value: values.openFileListPos,
