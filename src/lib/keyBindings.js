@@ -44,6 +44,27 @@ const APP_BINDING_CONFIG = [
 		readOnly: false,
 	},
 	{
+		name: "closeTabsToRight",
+		description: "Close tabs to the right.",
+		key: null,
+		action: "close-tabs-to-right",
+		readOnly: false,
+	},
+	{
+		name: "closeTabsToLeft",
+		description: "Close tabs to the left.",
+		key: null,
+		action: "close-tabs-to-left",
+		readOnly: false,
+	},
+	{
+		name: "closeOtherTabs",
+		description: "Close other tabs.",
+		key: null,
+		action: "close-other-tabs",
+		readOnly: false,
+	},
+	{
 		name: "newFile",
 		description: "Create new file",
 		key: "Ctrl-N",
@@ -245,6 +266,18 @@ const APP_BINDING_CONFIG = [
 		description: "Open log file",
 		key: null,
 		action: "open-log-file",
+		readOnly: true,
+	},
+	{
+		name: "increaseFontSize",
+		description: "Increase editor font size",
+		key: "Ctrl-+|Ctrl-=",
+		readOnly: true,
+	},
+	{
+		name: "decreaseFontSize",
+		description: "Decrease editor font size",
+		key: "Ctrl--",
 		readOnly: true,
 	},
 	{
@@ -630,7 +663,10 @@ function parseKeyParts(combo) {
 	const modifiers = new Set();
 	let baseKey = "";
 	if (!combo) return { modifiers, baseKey };
-	for (const rawPart of combo.split("-")) {
+	const parts = combo.endsWith("-")
+		? [...combo.slice(0, -1).split("-").filter(Boolean), "-"]
+		: combo.split("-");
+	for (const rawPart of parts) {
 		const part = rawPart.trim();
 		if (!part) continue;
 		const normalized = part.charAt(0).toUpperCase() + part.slice(1);

@@ -603,7 +603,7 @@ function execOperation(type, action, url, $target, name) {
 		recents.removeFile(url);
 		if (helpers.isFile(type)) {
 			await fsOperation(url).delete();
-			$target.remove();
+			removeEntryFromOpenFolder(url);
 			const file = editorManager.getFile(url, "uri");
 			if (file) file.uri = null;
 			editorManager.onupdate("delete-file");
@@ -634,7 +634,7 @@ function execOperation(type, action, url, $target, name) {
 			}
 			recents.removeFolder(url);
 			helpers.updateUriOfAllActiveFiles(url, null);
-			$target.parentElement.remove();
+			removeEntryFromOpenFolder(url);
 			editorManager.onupdate("delete-folder");
 			editorManager.emit("update", "delete-folder");
 		}
@@ -1018,6 +1018,36 @@ function getLoadedFileTree($el) {
 }
 
 /**
+ * Remove matching rendered entries from expanded folder views.
+ * This keeps FileTree's in-memory state aligned with the rendered tree.
+ * @param {string} entryUrl
+ */
+function removeEntryFromOpenFolder(entryUrl) {
+	const filesApp = sidebarApps.get("files");
+	const $els = Array.from(
+		filesApp.getAll(`[data-url="${CSS.escape(entryUrl)}"]`),
+	);
+
+	$els.forEach(($el) => {
+		const ownerTree =
+			$el?.parentElement?._fileTree ||
+			$el?.parentElement?.parentElement?._fileTree;
+
+		if (ownerTree) {
+			ownerTree.removeEntry(entryUrl);
+			return;
+		}
+
+		const type = $el.dataset.type;
+		if (helpers.isFile(type)) {
+			$el.remove();
+		} else {
+			$el.parentElement?.remove();
+		}
+	});
+}
+
+/**
  * Update matching expanded folder views with a new entry.
  * @param {string} parentUrl
  * @param {string} entryUrl
@@ -1153,16 +1183,7 @@ openFolder.removeItem = (url) => {
 		return;
 	}
 
-	const filesApp = sidebarApps.get("files");
-	const $el = filesApp.getAll(`[data-url="${url}"]`);
-	Array.from($el).forEach(($el) => {
-		const type = $el.dataset.type;
-		if (helpers.isFile(type)) {
-			$el.remove();
-		} else {
-			$el.parentElement.remove();
-		}
-	});
+	removeEntryFromOpenFolder(url);
 };
 
 openFolder.removeFolders = (url) => {

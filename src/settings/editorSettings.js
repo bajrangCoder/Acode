@@ -127,6 +127,13 @@ export default function editorSettings() {
 			category: categories.assistance,
 		},
 		{
+			key: "autoCloseTags",
+			text: strings["auto close tags"],
+			checkbox: values.autoCloseTags,
+			info: strings["settings-info-editor-auto-close-tags"],
+			category: categories.assistance,
+		},
+		{
 			key: "colorPreview",
 			text: strings["color preview"],
 			checkbox: values.colorPreview,
@@ -164,7 +171,7 @@ export default function editorSettings() {
 		{
 			key: "indentGuides",
 			text: strings["indent guides"] || "Indent guides",
-			checkbox: values.indentGuides ?? true,
+			checkbox: values.indentGuides ?? false,
 			info: strings["settings-info-editor-indent-guides"],
 			category: categories.guidesIndicators,
 		},
