@@ -17,8 +17,17 @@ const ADMOB_PLUGIN_DIR = "admob";
 
 function isPaidVersion() {
 	const configPath = path.join(__dirname, "../config.xml");
-	const config = fs.readFileSync(configPath, "utf8");
-	const widgetId = /<widget[^>]*\sid="([^"]+)"/.exec(config)?.[1];
+	let config;
+
+	try {
+		config = fs.readFileSync(configPath, "utf8");
+	} catch (error) {
+		throw new Error(`Unable to read config.xml at ${configPath}.`, {
+			cause: error,
+		});
+	}
+
+	const widgetId = /<widget[^>]*\sid=["']([^"']+)["']/.exec(config)?.[1];
 
 	return widgetId === ID_PAID;
 }
