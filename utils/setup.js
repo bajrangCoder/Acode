@@ -12,6 +12,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const PLATFORM_FILES = [".DS_Store"];
 const PACKAGE_MANAGERS = new Set(["bun", "npm", "pnpm", "yarn"]);
+const ID_PAID = "com.foxdebug.acode";
+const ADMOB_PLUGIN_DIR = "admob";
+
+function isPaidVersion() {
+	const configPath = path.join(__dirname, "../config.xml");
+	const config = fs.readFileSync(configPath, "utf8");
+	const widgetId = /<widget[^>]*\sid="([^"]+)"/.exec(config)?.[1];
+
+	return widgetId === ID_PAID;
+}
 
 function getPackageManager() {
 	const userAgent = process.env.npm_config_user_agent;
@@ -61,8 +71,10 @@ execSync("cordova plugin add cordova-plugin-buildinfo", { stdio: "inherit" });
 execSync("cordova plugin add cordova-plugin-device", { stdio: "inherit" });
 execSync("cordova plugin add cordova-plugin-file", { stdio: "inherit" });
 
+const shouldSkipAdmob = isPaidVersion();
 const plugins = fs.readdirSync(path.join(__dirname, "../src/plugins"));
 plugins.forEach((plugin) => {
 	if (PLATFORM_FILES.includes(plugin) || plugin.startsWith(".")) return;
+	if (shouldSkipAdmob && plugin === ADMOB_PLUGIN_DIR) return;
 	execSync(`cordova plugin add ./src/plugins/${plugin}`, { stdio: "inherit" });
 });
