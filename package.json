@@ -149,6 +149,8 @@
     "@emmetio/codemirror6-plugin": "^0.4.0",
     "@lezer/highlight": "^1.2.3",
     "@ungap/custom-elements": "^1.3.0",
+    "@wterm/dom": "0.3.0",
+    "@wterm/ghostty": "0.3.0",
     "@xterm/addon-attach": "^0.11.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-image": "^0.8.0",

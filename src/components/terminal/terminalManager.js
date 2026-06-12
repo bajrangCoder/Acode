@@ -332,7 +332,7 @@ class TerminalManager {
 				setTimeout(async () => {
 					try {
 						// Mount terminal component
-						terminalComponent.mount(terminalContainer);
+						await terminalComponent.mount(terminalContainer);
 
 						// Connect to session if in server mode
 						if (terminalComponent.serverMode) {
@@ -528,7 +528,7 @@ class TerminalManager {
 			setTimeout(async () => {
 				try {
 					// Mount terminal component
-					terminalComponent.mount(terminalContainer);
+					await terminalComponent.mount(terminalContainer);
 
 					// Write initial message
 					terminalComponent.write("🚀 Installing Terminal Environment...\r\n");
@@ -578,7 +578,7 @@ class TerminalManager {
 		terminalId,
 		titlePrefix = terminalId,
 	) {
-		const textarea = terminalComponent.terminal?.textarea;
+		const textarea = terminalComponent.getInputElement?.();
 		if (textarea) {
 			const onFocus = () => {
 				clearTimeout(this.onBlurTimeout);
@@ -620,13 +620,10 @@ class TerminalManager {
 			// Guarded fit on focus: only fit if cols/rows would change, then focus
 			const run = () => {
 				try {
-					const pd = terminalComponent.fitAddon?.proposeDimensions?.();
-					if (
-						pd &&
-						(pd.cols !== terminalComponent.terminal.cols ||
-							pd.rows !== terminalComponent.terminal.rows)
-					) {
-						terminalComponent.fitAddon.fit();
+					const pd = terminalComponent.proposeDimensions?.();
+					const size = terminalComponent.getSize();
+					if (pd && (pd.cols !== size.cols || pd.rows !== size.rows)) {
+						terminalComponent.fit();
 					}
 				} catch {}
 				terminalComponent.focus();
@@ -710,7 +707,7 @@ class TerminalManager {
 			resizeTimeout = setTimeout(() => {
 				try {
 					// Check if terminal is still available and mounted
-					if (!terminalComponent.terminal || !terminalComponent.container) {
+					if (!terminalComponent.container) {
 						return;
 					}
 
@@ -997,6 +994,47 @@ class TerminalManager {
 				padding: 0.25rem;
 				box-sizing: border-box;
 			}
+
+			.terminal-content.wterm,
+			.terminal-content.terminal-wterm {
+				width: 100%;
+				height: 100%;
+				box-sizing: border-box;
+				padding: 0.25rem;
+				border-radius: 0;
+				box-shadow: none;
+				overflow-x: hidden;
+				overflow-y: auto;
+				font-weight: var(--term-font-weight, normal);
+				-webkit-user-select: text !important;
+				user-select: text !important;
+				-webkit-touch-callout: default;
+				touch-action: auto;
+				contain: layout paint style;
+				overscroll-behavior: contain;
+				scrollbar-width: none;
+			}
+
+			.terminal-content.wterm::-webkit-scrollbar,
+			.terminal-content.terminal-wterm::-webkit-scrollbar {
+				display: none;
+			}
+
+			.terminal-content.wterm .term-grid,
+			.terminal-content.terminal-wterm .term-grid,
+			.terminal-content.wterm .term-row,
+			.terminal-content.terminal-wterm .term-row,
+			.terminal-content.wterm .term-row > span,
+			.terminal-content.terminal-wterm .term-row > span {
+				-webkit-user-select: text !important;
+				user-select: text !important;
+			}
+
+			.terminal-content.wterm textarea,
+			.terminal-content.terminal-wterm textarea {
+				-webkit-user-select: auto !important;
+				user-select: auto !important;
+			}
 		`;
 	}
 
@@ -1033,24 +1071,21 @@ class TerminalManager {
 		setTimeout(() => {
 			this.terminals.forEach((terminal) => {
 				try {
-					if (terminal.component && terminal.component.terminal) {
+					if (terminal.component) {
 						// Force a re-fit for all terminals
 						terminal.component.fit();
 
 						// If terminal has lots of content, try to preserve scroll position
-						const buffer = terminal.component.terminal.buffer?.active;
-						if (
-							buffer &&
-							buffer.length > terminal.component.terminal.rows * 2
-						) {
+						const buffer = terminal.component.terminal?.buffer?.active;
+						const { rows } = terminal.component.getSize();
+						if (buffer && buffer.length > rows * 2) {
 							// For content-heavy terminals, ensure we stay near the bottom if we were there
 							const wasNearBottom =
-								buffer.viewportY >=
-								buffer.length - terminal.component.terminal.rows - 5;
+								buffer.viewportY >= buffer.length - rows - 5;
 							if (wasNearBottom) {
 								// Scroll to bottom after resize
 								setTimeout(() => {
-									terminal.component.terminal.scrollToBottom();
+									terminal.component.terminal?.scrollToBottom?.();
 								}, 100);
 							}
 						}
@@ -1071,7 +1106,7 @@ class TerminalManager {
 	stabilizeTerminals() {
 		this.terminals.forEach((terminal) => {
 			try {
-				if (terminal.component && terminal.component.terminal) {
+				if (terminal.component) {
 					// Clear any touch selections during stabilization
 					if (
 						terminal.component.touchSelection &&

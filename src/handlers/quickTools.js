@@ -726,7 +726,7 @@ function getActiveTerminalComponent() {
 }
 
 function getActiveTerminalInput() {
-	return getActiveTerminalComponent()?.terminal?.textarea || null;
+	return getActiveTerminalComponent()?.getInputElement?.() || null;
 }
 
 function insertText(value) {
@@ -734,20 +734,10 @@ function insertText(value) {
 	if (!text) return false;
 
 	const terminalComponent = getActiveTerminalComponent();
-	if (terminalComponent?.terminal) {
-		if (typeof terminalComponent.terminal.paste === "function") {
-			terminalComponent.terminal.paste(text);
-			terminalComponent.focus();
-			return true;
-		}
-
-		if (terminalComponent.serverMode && terminalComponent.isConnected) {
-			terminalComponent.write(text);
-			terminalComponent.focus();
-			return true;
-		}
-
-		return false;
+	if (terminalComponent) {
+		terminalComponent.paste(text);
+		terminalComponent.focus();
+		return true;
 	}
 
 	const { editor } = editorManager;

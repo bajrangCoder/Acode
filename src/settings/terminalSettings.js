@@ -34,6 +34,8 @@ export default function terminalSettings() {
 	}
 
 	const terminalValues = values.terminalSettings;
+	const currentRenderEngine = terminalValues.renderEngine || "xtermjs";
+	const isWtermRenderer = currentRenderEngine === "wterm";
 
 	const items = [
 		{
@@ -43,6 +45,44 @@ export default function terminalSettings() {
 			category: categories.permissions,
 			chevron: true,
 		},
+		{
+			key: "renderEngine",
+			text: strings["terminal:renderer"] || "Terminal Renderer",
+			value: currentRenderEngine,
+			select: [
+				["xtermjs", "xterm.js"],
+				["wterm", "wterm (Experimental)"],
+			],
+			info:
+				strings["info-terminal-renderer"] ||
+				"Choose the terminal renderer. wterm is experimental and uses DOM selection.",
+			valueText(value) {
+				const option = this.select.find(([v]) => v === value);
+				return option ? option[1] : value;
+			},
+			category: categories.display,
+		},
+		...(isWtermRenderer
+			? [
+					{
+						key: "wtermParser",
+						text: strings["terminal:wterm parser"] || "wterm Parser",
+						value: terminalValues.wtermParser || "default",
+						select: [
+							["default", "Default"],
+							["ghostty", "Ghostty"],
+						],
+						info:
+							strings["info-terminal-wterm-parser"] ||
+							"Choose the parser core used by wterm.",
+						valueText(value) {
+							const option = this.select.find(([v]) => v === value);
+							return option ? option[1] : value;
+						},
+						category: categories.display,
+					},
+				]
+			: []),
 		{
 			key: "fontSize",
 			text: strings["font size"],
@@ -113,6 +153,7 @@ export default function terminalSettings() {
 			promptType: "number",
 			info: strings["info-letterSpacing"],
 			category: categories.display,
+			renderer: "xtermjs",
 		},
 		{
 			key: "fontLigatures",
@@ -120,6 +161,7 @@ export default function terminalSettings() {
 			checkbox: terminalValues.fontLigatures,
 			info: strings["info-fontLigatures"],
 			category: categories.display,
+			renderer: "xtermjs",
 		},
 		{
 			key: "cursorStyle",
@@ -128,6 +170,7 @@ export default function terminalSettings() {
 			select: ["block", "underline", "bar"],
 			info: strings["info-cursorStyle"],
 			category: categories.cursor,
+			renderer: "xtermjs",
 		},
 		{
 			key: "cursorInactiveStyle",
@@ -136,6 +179,7 @@ export default function terminalSettings() {
 			select: ["outline", "block", "bar", "underline", "none"],
 			info: strings["info-cursorInactiveStyle"],
 			category: categories.cursor,
+			renderer: "xtermjs",
 		},
 		{
 			key: "cursorBlink",
@@ -158,6 +202,7 @@ export default function terminalSettings() {
 			},
 			info: strings["info-scrollback"],
 			category: categories.session,
+			renderer: "xtermjs",
 		},
 		{
 			key: "tabStopWidth",
@@ -173,6 +218,7 @@ export default function terminalSettings() {
 			},
 			info: strings["info-tabStopWidth"],
 			category: categories.session,
+			renderer: "xtermjs",
 		},
 		{
 			key: "convertEol",
@@ -180,6 +226,7 @@ export default function terminalSettings() {
 			checkbox: terminalValues.convertEol,
 			info: strings["settings-info-terminal-convert-eol"],
 			category: categories.session,
+			renderer: "xtermjs",
 		},
 		{
 			key: "imageSupport",
@@ -187,6 +234,7 @@ export default function terminalSettings() {
 			checkbox: terminalValues.imageSupport,
 			info: strings["info-imageSupport"],
 			category: categories.session,
+			renderer: "xtermjs",
 		},
 		{
 			key: "confirmTabClose",
@@ -225,7 +273,11 @@ export default function terminalSettings() {
 		},
 	];
 
-	return settingsPage(title, items, callback, undefined, {
+	const visibleItems = items.filter(
+		(item) => !item.renderer || item.renderer === currentRenderEngine,
+	);
+
+	return settingsPage(title, visibleItems, callback, undefined, {
 		preserveOrder: true,
 		pageClassName: "detail-settings-page",
 		listClassName: "detail-settings-list",
@@ -294,7 +346,14 @@ export default function terminalSettings() {
 				});
 
 				// Update any active terminal instances
-				updateActiveTerminals(key, value);
+				if (key === "renderEngine" || key === "wtermParser") {
+					toast(
+						strings["terminal-renderer-reopen-info"] ||
+							"New terminal renderer settings apply to newly opened terminals.",
+					);
+				} else {
+					updateActiveTerminals(key, value);
+				}
 				break;
 		}
 	}
@@ -382,11 +441,9 @@ export async function updateActiveTerminals(key, value) {
 
 	terminalTabs.forEach(async (tab) => {
 		if (tab.terminalComponent) {
-			const terminalOptions = {};
-
 			switch (key) {
 				case "fontSize":
-					tab.terminalComponent.terminal.options.fontSize = value;
+					tab.terminalComponent.updateOption("fontSize", value);
 					break;
 				case "fontFamily":
 					// Load font if it's not already loaded
@@ -396,43 +453,38 @@ export async function updateActiveTerminals(key, value) {
 					} catch (error) {
 						console.warn(`Failed to load font ${value}:`, error);
 					}
-					tab.terminalComponent.terminal.options.fontFamily = value;
-					tab.terminalComponent.terminal.refresh(
-						0,
-						tab.terminalComponent.terminal.rows - 1,
-					);
+					tab.terminalComponent.updateOption("fontFamily", value);
 					break;
 				case "fontWeight":
-					tab.terminalComponent.terminal.options.fontWeight = value;
+					tab.terminalComponent.updateOption("fontWeight", value);
 					break;
 				case "cursorBlink":
-					tab.terminalComponent.terminal.options.cursorBlink = value;
+					tab.terminalComponent.updateOption("cursorBlink", value);
 					break;
 				case "cursorStyle":
-					tab.terminalComponent.terminal.options.cursorStyle = value;
+					tab.terminalComponent.updateOption("cursorStyle", value);
 					break;
 				case "cursorInactiveStyle":
-					tab.terminalComponent.terminal.options.cursorInactiveStyle = value;
+					tab.terminalComponent.updateOption("cursorInactiveStyle", value);
 					break;
 				case "scrollback":
-					tab.terminalComponent.terminal.options.scrollback = value;
+					tab.terminalComponent.updateOption("scrollback", value);
 					break;
 				case "tabStopWidth":
-					tab.terminalComponent.terminal.options.tabStopWidth = value;
+					tab.terminalComponent.updateOption("tabStopWidth", value);
 					break;
 				case "convertEol":
-					tab.terminalComponent.terminal.options.convertEol = value;
+					tab.terminalComponent.updateOption("convertEol", value);
 					break;
 				case "letterSpacing":
-					tab.terminalComponent.terminal.options.letterSpacing = value;
+					tab.terminalComponent.updateOption("letterSpacing", value);
 					break;
 				case "theme":
-					tab.terminalComponent.terminal.options.theme =
-						TerminalThemeManager.getTheme(value);
+					tab.terminalComponent.updateOption("theme", value);
 					// Update container background to match new theme
 					if (tab.terminalComponent.container) {
 						tab.terminalComponent.container.style.background =
-							tab.terminalComponent.terminal.options.theme.background;
+							TerminalThemeManager.getTheme(value).background;
 					}
 					break;
 				case "imageSupport":

@@ -1,8 +1,11 @@
 /**
- * Terminal Component using xtermjs
+ * Terminal Component using xtermjs or wterm
  * Provides a pluggable and customizable terminal interface
  */
 
+import { WebSocketTransport, WTerm } from "@wterm/dom";
+import "@wterm/dom/css";
+import { GhosttyCore } from "@wterm/ghostty";
 import { AttachAddon } from "@xterm/addon-attach";
 import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
@@ -39,6 +42,8 @@ export default class TerminalComponent {
 			rows: options.rows || 24,
 			cols: options.cols || 80,
 			port: options.port || 8767,
+			renderEngine: terminalSettings.renderEngine,
+			wtermParser: terminalSettings.wtermParser,
 			renderer: options.renderer || "auto", // 'auto' | 'canvas' | 'webgl'
 			fontSize: terminalSettings.fontSize,
 			fontFamily: terminalSettings.fontFamily,
@@ -64,10 +69,19 @@ export default class TerminalComponent {
 		this.ligaturesAddon = null;
 		this.container = null;
 		this.websocket = null;
+		this.transport = null;
 		this.pid = null;
 		this.isConnected = false;
 		this.serverMode = options.serverMode !== false; // Default true
 		this.touchSelection = null;
+		this.isWterm = this.options.renderEngine === "wterm";
+		this.isMounted = false;
+		this.lastStableWtermSize = {
+			cols: this.options.cols,
+			rows: this.options.rows,
+		};
+		this.hasInitialWtermFit = false;
+		this.boundWtermKeyHandler = null;
 		this.parsedAppKeybindings = [];
 		this.parsedAppKeybindingsVersion = -1;
 		this.boundNativeSelectionMenuHandler = null;
@@ -76,6 +90,8 @@ export default class TerminalComponent {
 	}
 
 	init() {
+		if (this.isWterm) return;
+
 		this.terminal = new Xterm(this.options);
 
 		// Initialize addons
@@ -120,6 +136,8 @@ export default class TerminalComponent {
 	}
 
 	setupEventHandlers() {
+		if (this.isWterm) return;
+
 		// terminal resize handling
 		this.setupResizeHandling();
 
@@ -148,31 +166,7 @@ export default class TerminalComponent {
 		// Register custom OSC handler for ID 7777
 		// Format: command;arg1;arg2;... where arg2 (path) may contain semicolons
 		this.terminal.parser.registerOscHandler(7777, (data) => {
-			const firstSemi = data.indexOf(";");
-			if (firstSemi === -1) {
-				console.warn("Invalid OSC 7777 format:", data);
-				return true;
-			}
-
-			const command = data.substring(0, firstSemi);
-			const rest = data.substring(firstSemi + 1);
-
-			switch (command) {
-				case "open": {
-					// Format: open;type;path (path may contain semicolons)
-					const secondSemi = rest.indexOf(";");
-					if (secondSemi === -1) {
-						console.warn("Invalid OSC 7777 open format:", data);
-						return true;
-					}
-					const type = rest.substring(0, secondSemi);
-					const path = rest.substring(secondSemi + 1);
-					this.handleOscOpen(type, path);
-					break;
-				}
-				default:
-					console.warn("Unknown OSC 7777 command:", command);
-			}
+			this.handleOscCommand(data);
 			return true;
 		});
 	}
@@ -413,77 +407,89 @@ export default class TerminalComponent {
 	setupCopyPasteHandlers() {
 		// Add keyboard event listener to terminal element
 		this.terminal.attachCustomKeyEventHandler((event) => {
-			// Check for Ctrl+Shift+C (copy)
-			if (event.ctrlKey && event.shiftKey && event.key === "C") {
-				event.preventDefault();
-				this.copySelection();
-				return false;
-			}
-
-			// Check for Ctrl+Shift+V (paste)
-			if (event.ctrlKey && event.shiftKey && event.key === "V") {
-				event.preventDefault();
-				this.pasteFromClipboard();
-				return false;
-			}
-
-			// Keep terminal font zoom local. Shift variants are handled by app keybindings below.
-			if (
-				event.ctrlKey &&
-				!event.shiftKey &&
-				!event.altKey &&
-				!event.metaKey &&
-				(event.key === "+" || event.key === "=")
-			) {
-				event.preventDefault();
-				this.increaseFontSize();
-				return false;
-			}
-
-			if (
-				event.ctrlKey &&
-				!event.shiftKey &&
-				!event.altKey &&
-				!event.metaKey &&
-				event.key === "-"
-			) {
-				event.preventDefault();
-				this.decreaseFontSize();
-				return false;
-			}
-
-			if (event.ctrlKey || event.altKey || event.metaKey) {
-				if (["Control", "Alt", "Meta", "Shift"].includes(event.key)) {
-					return true;
-				}
-
-				const appKeybindings = this.parseAppKeybindings();
-				const eventKey = event.key === "_" ? "-" : event.key.toLowerCase();
-				const binding = appKeybindings.find(
-					(binding) =>
-						binding.ctrl === event.ctrlKey &&
-						binding.shift === event.shiftKey &&
-						binding.alt === event.altKey &&
-						binding.meta === event.metaKey &&
-						binding.key === eventKey,
-				);
-
-				if (binding && executeCommand(binding.name)) {
-					return false;
-				}
-			}
-
-			if (event.ctrlKey || event.altKey || event.metaKey) return true;
-
-			// Return true to allow normal processing for other keys
-			return true;
+			return this.handleTerminalKeyEvent(event);
 		});
+	}
+
+	handleTerminalKeyEvent(event) {
+		// Check for Ctrl+Shift+C (copy)
+		if (event.ctrlKey && event.shiftKey && event.key === "C") {
+			event.preventDefault();
+			this.copySelection();
+			return false;
+		}
+
+		// Check for Ctrl+Shift+V (paste)
+		if (event.ctrlKey && event.shiftKey && event.key === "V") {
+			event.preventDefault();
+			this.pasteFromClipboard();
+			return false;
+		}
+
+		// Keep terminal font zoom local. Shift variants are handled by app keybindings below.
+		if (
+			event.ctrlKey &&
+			!event.shiftKey &&
+			!event.altKey &&
+			!event.metaKey &&
+			(event.key === "+" || event.key === "=")
+		) {
+			event.preventDefault();
+			this.increaseFontSize();
+			return false;
+		}
+
+		if (
+			event.ctrlKey &&
+			!event.shiftKey &&
+			!event.altKey &&
+			!event.metaKey &&
+			event.key === "-"
+		) {
+			event.preventDefault();
+			this.decreaseFontSize();
+			return false;
+		}
+
+		if (event.ctrlKey || event.altKey || event.metaKey) {
+			if (["Control", "Alt", "Meta", "Shift"].includes(event.key)) {
+				return true;
+			}
+
+			const appKeybindings = this.parseAppKeybindings();
+			const eventKey = event.key === "_" ? "-" : event.key.toLowerCase();
+			const binding = appKeybindings.find(
+				(binding) =>
+					binding.ctrl === event.ctrlKey &&
+					binding.shift === event.shiftKey &&
+					binding.alt === event.altKey &&
+					binding.meta === event.metaKey &&
+					binding.key === eventKey,
+			);
+
+			if (binding && executeCommand(binding.name)) {
+				event.preventDefault();
+				return false;
+			}
+		}
+
+		if (event.ctrlKey || event.altKey || event.metaKey) return true;
+
+		// Return true to allow normal processing for other keys
+		return true;
 	}
 
 	/**
 	 * Copy selected text to clipboard
 	 */
 	copySelection() {
+		if (this.isWterm) {
+			const selectedStr = window.getSelection?.()?.toString();
+			if (selectedStr && cordova?.plugins?.clipboard) {
+				cordova.plugins.clipboard.copy(selectedStr);
+			}
+			return;
+		}
 		if (!this.terminal?.hasSelection()) return;
 		const selectedStr = this.terminal?.getSelection();
 		if (selectedStr && cordova?.plugins?.clipboard) {
@@ -497,7 +503,7 @@ export default class TerminalComponent {
 	pasteFromClipboard() {
 		if (cordova?.plugins?.clipboard) {
 			cordova.plugins.clipboard.paste((text) => {
-				this.terminal?.paste(text);
+				this.paste(text);
 			});
 		}
 	}
@@ -517,7 +523,9 @@ export default class TerminalComponent {
       overflow: hidden;
       box-sizing: border-box;
     `;
-		this.disableNativeSelectionMenu(this.container);
+		if (!this.isWterm) {
+			this.disableNativeSelectionMenu(this.container);
+		}
 
 		return this.container;
 	}
@@ -526,7 +534,7 @@ export default class TerminalComponent {
 	 * Mount terminal to container
 	 * @param {HTMLElement} container - Container element
 	 */
-	mount(container) {
+	async mount(container) {
 		if (!container) {
 			container = this.createContainer();
 		}
@@ -535,9 +543,16 @@ export default class TerminalComponent {
 
 		// Apply terminal background color to container to match theme
 		this.container.style.background = this.options.theme.background;
-		this.disableNativeSelectionMenu(this.container);
+		if (!this.isWterm) {
+			this.disableNativeSelectionMenu(this.container);
+		}
 
 		try {
+			if (this.isWterm) {
+				await this.mountWterm(container);
+				return container;
+			}
+
 			// Open first to ensure a stable renderer is attached
 			this.terminal.open(container);
 
@@ -606,6 +621,71 @@ export default class TerminalComponent {
 		}
 
 		return container;
+	}
+
+	async mountWterm(container) {
+		this.applyWtermCssVariables();
+		container.classList.add("terminal-wterm");
+		container.classList.remove("terminal-native-selection-disabled");
+
+		let core;
+		if (this.options.wtermParser === "ghostty") {
+			try {
+				core = await GhosttyCore.load();
+			} catch (error) {
+				console.error("Failed to load wterm Ghostty core:", error);
+				throw new Error(
+					`Failed to load wterm Ghostty parser: ${error?.message || error}`,
+				);
+			}
+		}
+
+		this.terminal = new WTerm(container, {
+			cols: this.options.cols,
+			rows: this.options.rows,
+			core,
+			autoResize: false,
+			cursorBlink: this.options.cursorBlink,
+			onTitle: (title) => {
+				this.onTitleChange?.(title);
+			},
+			onResize: (cols, rows) => {
+				if (this.serverMode) {
+					this.resizeTerminal(cols, rows);
+				}
+			},
+			onData: (data) => {
+				if (this.serverMode && this.transport) {
+					this.transport.send(data);
+				} else {
+					this.terminal?.write(data);
+				}
+			},
+		});
+
+		await this.loadTerminalFont();
+		await this.terminal.init();
+		container.style.height = "100%";
+		this.fitWterm({ resizeRows: true });
+		this.hasInitialWtermFit = true;
+		this.isMounted = true;
+
+		this.boundWtermKeyHandler = (event) => {
+			if (this.handleTerminalKeyEvent(event) === false) {
+				event.stopPropagation();
+			}
+		};
+		container.addEventListener("keydown", this.boundWtermKeyHandler, true);
+
+		if (typeof requestAnimationFrame === "function") {
+			requestAnimationFrame(() => {
+				this.focus();
+			});
+		} else {
+			setTimeout(() => {
+				this.focus();
+			}, 0);
+		}
 	}
 
 	/**
@@ -697,9 +777,10 @@ export default class TerminalComponent {
 				}
 			}
 
+			const { cols, rows } = this.getSize();
 			const requestBody = {
-				cols: this.terminal.cols,
-				rows: this.terminal.rows,
+				cols,
+				rows,
 			};
 
 			const response = await new Promise((resolve, reject) => {
@@ -746,6 +827,11 @@ export default class TerminalComponent {
 		this.pid = pid;
 
 		const wsUrl = `ws://localhost:${this.options.port}/terminals/${pid}`;
+
+		if (this.isWterm) {
+			await this.connectWtermTransport(wsUrl, pid);
+			return;
+		}
 
 		await new Promise((resolve, reject) => {
 			const websocket = new WebSocket(wsUrl);
@@ -840,6 +926,92 @@ export default class TerminalComponent {
 		});
 	}
 
+	async connectWtermTransport(wsUrl, pid) {
+		await new Promise((resolve, reject) => {
+			const CONNECT_TIMEOUT = 5000;
+			let settled = false;
+			let hasOpened = false;
+
+			const rejectInitialConnect = (message, error) => {
+				if (settled || hasOpened) return;
+				settled = true;
+				this.isConnected = false;
+				try {
+					this.transport?.close?.();
+				} catch {}
+				reject(error || new Error(message));
+			};
+
+			const connectionTimeout = setTimeout(() => {
+				rejectInitialConnect(
+					`Timed out while connecting to terminal session ${pid}`,
+				);
+			}, CONNECT_TIMEOUT);
+
+			this.transport = new WebSocketTransport({
+				url: wsUrl,
+				reconnect: true,
+				onData: (data) => {
+					const payload = this.extractAcodeOscCommands(data);
+					if (payload == null || payload === "") return;
+
+					if (typeof payload === "string") {
+						try {
+							const message = JSON.parse(payload);
+							if (message.type === "exit") {
+								this.onProcessExit?.(message.data);
+								return;
+							}
+						} catch (error) {
+							// Not a JSON control message; write it to wterm.
+						}
+					}
+
+					this.terminal?.write(payload);
+				},
+				onOpen: () => {
+					clearTimeout(connectionTimeout);
+					hasOpened = true;
+					this.isConnected = true;
+					this.onConnect?.();
+					this.focus();
+					this.fit();
+
+					if (!settled) {
+						settled = true;
+						resolve();
+					}
+				},
+				onClose: () => {
+					clearTimeout(connectionTimeout);
+					this.isConnected = false;
+
+					if (!hasOpened) {
+						rejectInitialConnect(`Terminal session ${pid} is unavailable`);
+						return;
+					}
+
+					this.onDisconnect?.();
+				},
+				onError: (error) => {
+					if (!hasOpened) {
+						clearTimeout(connectionTimeout);
+						rejectInitialConnect(
+							`Failed to connect to terminal session ${pid}`,
+							new Error(`Failed to connect to terminal session ${pid}`),
+						);
+						return;
+					}
+
+					console.error("WebSocket transport error:", error);
+					this.onError?.(error);
+				},
+			});
+
+			this.transport.connect();
+		});
+	}
+
 	/**
 	 * Resize terminal
 	 * @param {number} cols - Number of columns
@@ -870,8 +1042,50 @@ export default class TerminalComponent {
 	 * Fit terminal to container
 	 */
 	fit() {
-		if (this.fitAddon) {
+		if (this.isWterm) {
+			this.fitWterm({ resizeRows: !this.hasInitialWtermFit });
+		} else if (this.fitAddon) {
 			this.fitAddon.fit();
+		}
+	}
+
+	fitWterm(options = {}) {
+		if (!this.terminal || !this.container) return;
+
+		try {
+			const measured = this.terminal._measureCharSize?.();
+			if (!measured) return;
+
+			const rect = this.container.getBoundingClientRect();
+			const style = getComputedStyle(this.container);
+			const horizontalPadding =
+				(Number.parseFloat(style.paddingLeft) || 0) +
+				(Number.parseFloat(style.paddingRight) || 0);
+			const verticalPadding =
+				(Number.parseFloat(style.paddingTop) || 0) +
+				(Number.parseFloat(style.paddingBottom) || 0);
+			const contentWidth = rect.width - horizontalPadding;
+			const contentHeight = rect.height - verticalPadding;
+
+			if (contentWidth <= 0 || contentHeight <= 0) return;
+
+			const cols = Math.max(1, Math.floor(contentWidth / measured.charWidth));
+			const measuredRows = Math.max(
+				1,
+				Math.floor(contentHeight / measured.rowHeight),
+			);
+
+			// Android keyboard transitions can briefly report unstable dimensions.
+			// Do not let one bad measurement collapse the terminal to a single column.
+			if (cols < 10 || measuredRows < 3) return;
+
+			const rows = options.resizeRows ? measuredRows : this.terminal.rows;
+			if (cols !== this.terminal.cols || rows !== this.terminal.rows) {
+				this.lastStableWtermSize = { cols, rows };
+				this.terminal.resize(cols, rows);
+			}
+		} catch (error) {
+			console.error("Failed to fit wterm:", error);
 		}
 	}
 
@@ -880,7 +1094,13 @@ export default class TerminalComponent {
 	 * @param {string} data - Data to write
 	 */
 	write(data) {
-		if (
+		if (this.isWterm) {
+			if (this.serverMode && this.isConnected && this.transport) {
+				this.transport.send(data);
+			} else {
+				this.terminal?.write(data);
+			}
+		} else if (
 			this.serverMode &&
 			this.isConnected &&
 			this.websocket &&
@@ -899,28 +1119,47 @@ export default class TerminalComponent {
 	 * @param {string} data - Data to write
 	 */
 	writeln(data) {
-		this.terminal.writeln(data);
+		this.terminal?.write(`${data}\r\n`);
 	}
 
 	/**
 	 * Clear terminal
 	 */
 	clear() {
-		this.terminal.clear();
+		if (this.isWterm) {
+			const { cols, rows } = this.getSize();
+			if (this.container && this.boundWtermKeyHandler) {
+				this.container.removeEventListener(
+					"keydown",
+					this.boundWtermKeyHandler,
+					true,
+				);
+				this.boundWtermKeyHandler = null;
+			}
+			this.terminal?.destroy();
+			this.terminal = null;
+			this.options.cols = cols;
+			this.options.rows = rows;
+			if (this.container) {
+				void this.mountWterm(this.container);
+			}
+			return;
+		}
+		this.terminal?.clear();
 	}
 
 	/**
 	 * Focus terminal
 	 */
 	focus() {
-		this.terminal.focus();
+		this.terminal?.focus();
 	}
 
 	/**
 	 * Blur terminal
 	 */
 	blur() {
-		this.terminal.blur();
+		this.terminal?.blur?.();
 	}
 
 	/**
@@ -962,7 +1201,14 @@ export default class TerminalComponent {
 			theme = TerminalThemeManager.getTheme(theme);
 		}
 		this.options.theme = { ...this.options.theme, ...theme };
-		this.terminal.options.theme = this.options.theme;
+		if (this.isWterm) {
+			this.applyWtermCssVariables();
+			if (this.container) {
+				this.container.style.background = this.options.theme.background;
+			}
+		} else if (this.terminal) {
+			this.terminal.options.theme = this.options.theme;
+		}
 	}
 
 	/**
@@ -971,13 +1217,100 @@ export default class TerminalComponent {
 	 */
 	updateOptions(options) {
 		Object.keys(options).forEach((key) => {
-			if (key === "theme") {
-				this.updateTheme(options.theme);
-			} else {
-				this.terminal.options[key] = options[key];
-				this.options[key] = options[key];
-			}
+			this.updateOption(key, options[key]);
 		});
+	}
+
+	updateOption(key, value) {
+		if (key === "theme") {
+			this.updateTheme(value);
+			return;
+		}
+
+		this.options[key] = value;
+
+		if (this.isWterm) {
+			switch (key) {
+				case "fontSize":
+				case "fontFamily":
+				case "fontWeight":
+					this.applyWtermCssVariables();
+					this.fit();
+					break;
+				case "cursorBlink":
+					this.container?.classList.toggle("cursor-blink", Boolean(value));
+					break;
+			}
+			return;
+		}
+
+		if (this.terminal?.options) {
+			this.terminal.options[key] = value;
+		}
+	}
+
+	getInputElement() {
+		if (this.isWterm) {
+			return (
+				this.terminal?.input?.textarea ||
+				this.container?.querySelector?.("[contenteditable='true']") ||
+				this.container
+			);
+		}
+		return this.terminal?.textarea || null;
+	}
+
+	getSize() {
+		return {
+			cols: this.terminal?.cols || this.options.cols || 80,
+			rows: this.terminal?.rows || this.options.rows || 24,
+		};
+	}
+
+	proposeDimensions() {
+		if (this.fitAddon?.proposeDimensions) {
+			return this.fitAddon.proposeDimensions();
+		}
+
+		if (!this.isWterm || !this.container || !this.terminal) return null;
+
+		const measured = this.terminal._measureCharSize?.();
+		if (!measured) return null;
+
+		const rect = this.container.getBoundingClientRect();
+		const style = getComputedStyle(this.container);
+		const horizontalPadding =
+			(Number.parseFloat(style.paddingLeft) || 0) +
+			(Number.parseFloat(style.paddingRight) || 0);
+		const verticalPadding =
+			(Number.parseFloat(style.paddingTop) || 0) +
+			(Number.parseFloat(style.paddingBottom) || 0);
+		const cols = Math.max(
+			1,
+			Math.floor((rect.width - horizontalPadding) / measured.charWidth),
+		);
+		const rows = Math.max(
+			1,
+			Math.floor((rect.height - verticalPadding) / measured.rowHeight),
+		);
+
+		if (cols < 10 || rows < 3) {
+			return this.lastStableWtermSize;
+		}
+
+		return { cols, rows };
+	}
+
+	paste(text) {
+		if (this.isWterm) {
+			if (this.serverMode && this.isConnected && this.transport) {
+				this.transport.send(String(text ?? ""));
+			} else {
+				this.terminal?.write(String(text ?? ""));
+			}
+			return;
+		}
+		this.terminal?.paste?.(text);
 	}
 
 	/**
@@ -1053,6 +1386,7 @@ export default class TerminalComponent {
 	 * @param {boolean} enabled - Whether to enable font ligatures
 	 */
 	updateFontLigatures(enabled) {
+		if (this.isWterm) return;
 		if (enabled) {
 			this.loadLigaturesAddon();
 		} else {
@@ -1079,7 +1413,7 @@ export default class TerminalComponent {
 	 * Increase terminal font size
 	 */
 	increaseFontSize() {
-		const currentSize = this.terminal.options.fontSize;
+		const currentSize = this.options.fontSize;
 		const newSize = Math.min(currentSize + 1, 24); // Max font size 24
 		this.updateFontSize(newSize);
 	}
@@ -1088,7 +1422,7 @@ export default class TerminalComponent {
 	 * Decrease terminal font size
 	 */
 	decreaseFontSize() {
-		const currentSize = this.terminal.options.fontSize;
+		const currentSize = this.options.fontSize;
 		const newSize = Math.max(currentSize - 1, 8); // Min font size 8
 		this.updateFontSize(newSize);
 	}
@@ -1097,10 +1431,9 @@ export default class TerminalComponent {
 	 * Update terminal font size and refresh display
 	 */
 	updateFontSize(fontSize) {
-		if (fontSize === this.terminal.options.fontSize) return;
+		if (fontSize === this.options.fontSize) return;
 
-		this.terminal.options.fontSize = fontSize;
-		this.options.fontSize = fontSize;
+		this.updateOption("fontSize", fontSize);
 
 		// Update terminal settings properly
 		const currentSettings = appSettings.value.terminalSettings || {};
@@ -1108,7 +1441,7 @@ export default class TerminalComponent {
 		appSettings.update({ terminalSettings: updatedSettings }, false);
 
 		// Refresh terminal display
-		this.terminal.refresh(0, this.terminal.rows - 1);
+		this.terminal?.refresh?.(0, this.terminal.rows - 1);
 
 		// Fit terminal to container after font size change to prevent empty space
 		setTimeout(() => {
@@ -1129,6 +1462,13 @@ export default class TerminalComponent {
 	 * Terminate terminal session
 	 */
 	async terminate() {
+		if (this.transport) {
+			try {
+				this.transport.close();
+			} catch {}
+			this.transport = null;
+		}
+
 		if (this.websocket) {
 			this.websocket.close();
 		}
@@ -1169,7 +1509,20 @@ export default class TerminalComponent {
 		this.disposeLigaturesAddon();
 
 		if (this.terminal) {
-			this.terminal.dispose();
+			if (this.isWterm) {
+				this.terminal.destroy();
+			} else {
+				this.terminal.dispose();
+			}
+		}
+
+		if (this.container && this.boundWtermKeyHandler) {
+			this.container.removeEventListener(
+				"keydown",
+				this.boundWtermKeyHandler,
+				true,
+			);
+			this.boundWtermKeyHandler = null;
 		}
 
 		if (this.container && this.boundNativeSelectionMenuHandler) {
@@ -1194,6 +1547,65 @@ export default class TerminalComponent {
 	onBell() {}
 	onProcessExit(exitData) {}
 }
+
+TerminalComponent.prototype.applyWtermCssVariables = function () {
+	if (!this.container) return;
+
+	const variables = TerminalThemeManager.getWtermCssVariables(
+		this.options.theme,
+		{
+			fontFamily: this.options.fontFamily,
+			fontSize: this.options.fontSize,
+			fontWeight: this.options.fontWeight,
+		},
+	);
+
+	Object.entries(variables).forEach(([key, value]) => {
+		this.container.style.setProperty(key, value);
+	});
+};
+
+TerminalComponent.prototype.extractAcodeOscCommands = function (data) {
+	let text = data;
+
+	if (data instanceof Uint8Array) {
+		text = new TextDecoder().decode(data);
+	}
+
+	if (typeof text !== "string") return data;
+
+	return text.replace(/\x1b\]7777;([\s\S]*?)(?:\x07|\x1b\\)/g, (_, command) => {
+		this.handleOscCommand(command);
+		return "";
+	});
+};
+
+TerminalComponent.prototype.handleOscCommand = function (data) {
+	const firstSemi = data.indexOf(";");
+	if (firstSemi === -1) {
+		console.warn("Invalid OSC 7777 format:", data);
+		return;
+	}
+
+	const command = data.substring(0, firstSemi);
+	const rest = data.substring(firstSemi + 1);
+
+	switch (command) {
+		case "open": {
+			const secondSemi = rest.indexOf(";");
+			if (secondSemi === -1) {
+				console.warn("Invalid OSC 7777 open format:", data);
+				return;
+			}
+			const type = rest.substring(0, secondSemi);
+			const path = rest.substring(secondSemi + 1);
+			this.handleOscOpen(type, path);
+			break;
+		}
+		default:
+			console.warn("Unknown OSC 7777 command:", command);
+	}
+};
 
 // Internal helpers for WebGL renderer lifecycle
 TerminalComponent.prototype._handleWebglContextLoss = function () {

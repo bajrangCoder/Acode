@@ -16,6 +16,8 @@ export const DEFAULT_TERMINAL_SETTINGS = {
 	fontLigatures: false,
 	confirmTabClose: true,
 	failsafeMode: false,
+	renderEngine: "xtermjs",
+	wtermParser: "default",
 	// Touch selection settings
 	touchSelectionTapHoldDuration: 600,
 	touchSelectionMoveThreshold: 8,

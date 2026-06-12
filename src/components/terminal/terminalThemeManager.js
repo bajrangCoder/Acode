@@ -464,6 +464,59 @@ class TerminalThemeManager {
 	}
 
 	/**
+	 * Convert an xterm-style theme object to wterm CSS custom properties.
+	 * @param {object|string} theme Theme object or theme name
+	 * @param {object} [options] Font options
+	 * @returns {object}
+	 */
+	getWtermCssVariables(theme, options = {}) {
+		const resolvedTheme =
+			typeof theme === "string" ? this.getTheme(theme) : theme;
+		const ansiColors = [
+			"black",
+			"red",
+			"green",
+			"yellow",
+			"blue",
+			"magenta",
+			"cyan",
+			"white",
+			"brightBlack",
+			"brightRed",
+			"brightGreen",
+			"brightYellow",
+			"brightBlue",
+			"brightMagenta",
+			"brightCyan",
+			"brightWhite",
+		];
+
+		const variables = {
+			"--term-bg": resolvedTheme.background,
+			"--term-fg": resolvedTheme.foreground,
+			"--term-cursor": resolvedTheme.cursor,
+		};
+
+		ansiColors.forEach((key, index) => {
+			if (resolvedTheme[key]) {
+				variables[`--term-color-${index}`] = resolvedTheme[key];
+			}
+		});
+
+		if (options.fontFamily) {
+			variables["--term-font-family"] = options.fontFamily;
+		}
+		if (options.fontSize) {
+			variables["--term-font-size"] = `${options.fontSize}px`;
+		}
+		if (options.fontWeight) {
+			variables["--term-font-weight"] = options.fontWeight;
+		}
+
+		return variables;
+	}
+
+	/**
 	 * Get all available themes
 	 * @returns {object} All themes
 	 */
