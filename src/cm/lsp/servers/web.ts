@@ -11,7 +11,7 @@ export const webServers: LspServerManifest[] = [
 		checkCommand: "which vscode-html-language-server",
 		installer: installers.npm({
 			executable: "vscode-html-language-server",
-			packages: ["vscode-langservers-extracted"],
+			packages: ["@zed-industries/vscode-langservers-extracted"],
 		}),
 		clientConfig: {
 			builtinExtensions: {
@@ -29,7 +29,7 @@ export const webServers: LspServerManifest[] = [
 		checkCommand: "which vscode-css-language-server",
 		installer: installers.npm({
 			executable: "vscode-css-language-server",
-			packages: ["vscode-langservers-extracted"],
+			packages: ["@zed-industries/vscode-langservers-extracted"],
 		}),
 		clientConfig: {
 			builtinExtensions: {
@@ -47,7 +47,7 @@ export const webServers: LspServerManifest[] = [
 		checkCommand: "which vscode-json-language-server",
 		installer: installers.npm({
 			executable: "vscode-json-language-server",
-			packages: ["vscode-langservers-extracted"],
+			packages: ["@zed-industries/vscode-langservers-extracted"],
 		}),
 		clientConfig: {
 			builtinExtensions: {

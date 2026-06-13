@@ -248,7 +248,7 @@ export const javascriptServers: LspServerManifest[] = [
 		checkCommand: "which vscode-eslint-language-server",
 		installer: installers.npm({
 			executable: "vscode-eslint-language-server",
-			packages: ["vscode-langservers-extracted"],
+			packages: ["@zed-industries/vscode-langservers-extracted"],
 		}),
 		enabled: false,
 		initializationOptions: {
