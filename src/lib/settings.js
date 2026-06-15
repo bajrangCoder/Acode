@@ -196,6 +196,11 @@ class Settings {
 			lsp: {
 				servers: {},
 				allowNonTerminalWorkspace: false,
+				runtime: {
+					default: "auto",
+					servers: {},
+					workspaces: {},
+				},
 			},
 			developerMode: false,
 			shiftClickSelection: false,
