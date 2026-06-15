@@ -19,7 +19,6 @@ import { supportsBuiltinFormatting } from "./formattingSupport";
 import { inlayHintsExtension } from "./inlayHints";
 import { acodeRenameKeymap } from "./rename";
 import { selectRuntimeProvider } from "./runtimeProviders";
-import "./runtimes/registerBuiltins";
 import serverRegistry from "./serverRegistry";
 import { hoverTooltips, signatureHelp } from "./tooltipExtensions";
 import { createTransport } from "./transport";
@@ -778,11 +777,25 @@ export class LspClientManager {
         throw unavailable;
       }
 
-      runtimeConnection = await runtimeProvider.start(server, runtimeContext);
+      const connection = await runtimeProvider.start(server, runtimeContext);
+      const connectionDispose = connection.dispose;
+      connection.dispose = async () => {
+        try {
+          if (connectionDispose) {
+            await connectionDispose();
+          }
+        } finally {
+          if (runtimeProvider.stop) {
+            await runtimeProvider.stop(connection);
+          }
+        }
+      };
+      runtimeConnection = connection;
+
       transportHandle = createTransportFromRuntimeConnection(
         server,
         runtimeContext,
-        runtimeConnection,
+        connection,
       );
       await transportHandle.ready;
       client = new LSPClient(clientConfig) as ExtendedLSPClient;

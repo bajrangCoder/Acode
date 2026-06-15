@@ -65,10 +65,6 @@ export const builtinAlpineRuntimeProvider: LspRuntimeProvider = {
 			transport,
 		};
 	},
-
-	stop(connection) {
-		return connection.dispose?.();
-	},
 };
 
 export default builtinAlpineRuntimeProvider;

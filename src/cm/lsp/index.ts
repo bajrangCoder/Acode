@@ -1,3 +1,5 @@
+import "./runtimes/registerBuiltins";
+
 export {
 	bundles,
 	default as lspApi,

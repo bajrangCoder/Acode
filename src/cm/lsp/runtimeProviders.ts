@@ -72,10 +72,7 @@ function canProviderRunServer(
 ): boolean {
 	const allowed = getAllowedRuntimes(server);
 	if (allowed) return allowed.has(provider.id);
-	return (
-		provider.id === BUILTIN_ALPINE_RUNTIME_ID ||
-		provider.id === EXTERNAL_WEBSOCKET_RUNTIME_ID
-	);
+	return true;
 }
 
 function withDerivedContext(

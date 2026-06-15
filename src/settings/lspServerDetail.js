@@ -348,7 +348,11 @@ function createItems(snapshot) {
 			chevron: true,
 		},
 	];
-	if (snapshot.installCommand || snapshot.installResult?.canInstall) {
+	if (
+		snapshot.installCommand ||
+		snapshot.installResult?.canInstall ||
+		!snapshot.directWebSocket
+	) {
 		installationItems.push({
 			key: "install_server",
 			text: strings["lsp-install-repair"],
@@ -357,7 +361,11 @@ function createItems(snapshot) {
 			chevron: true,
 		});
 	}
-	if (snapshot.updateCommand || snapshot.installResult?.canUpdate) {
+	if (
+		snapshot.updateCommand ||
+		snapshot.installResult?.canUpdate ||
+		!snapshot.directWebSocket
+	) {
 		installationItems.push({
 			key: "update_server",
 			text: strings["lsp-update-server"],
@@ -366,7 +374,7 @@ function createItems(snapshot) {
 			chevron: true,
 		});
 	}
-	if (snapshot.uninstallCommand) {
+	if (snapshot.uninstallCommand || !snapshot.directWebSocket) {
 		installationItems.push({
 			key: "uninstall_server",
 			text: strings["lsp-uninstall-server"],
@@ -514,9 +522,9 @@ export default function lspServerDetail(serverId) {
 		},
 		builtinExts:
 			getMergedConfig(initialServer).clientConfig?.builtinExtensions || {},
-		installCommand: directWebSocket ? null : "dummy",
-		updateCommand: directWebSocket ? null : "dummy",
-		uninstallCommand: directWebSocket ? null : "dummy",
+		installCommand: null,
+		updateCommand: null,
+		uninstallCommand: null,
 	};
 
 	const items = createItems(initialSnapshot);
